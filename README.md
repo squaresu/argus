@@ -59,6 +59,7 @@ bash windows/build.sh
 
 ## 接下來可以做的
 
+- 已經記下來、還沒做的項目：[docs/待辦.md](docs/待辦.md)
 - **更多工具**：例如 [OSV-Scanner](https://github.com/google/osv-scanner)（套件漏洞）、[Semgrep CE](https://github.com/semgrep/semgrep)（更多語言的程式檢查）。
 - **選配的 AI 判斷**：Cisco Skill Scanner 和 SkillSpector 都支援用 AI 再確認一次，可以做成「有金鑰才開、預設關閉」的進階選項。
 
