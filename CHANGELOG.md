@@ -1,6 +1,12 @@
 # 更新紀錄
 
-## 2.0.2（未發佈）
+## 2.1.0（2026-11）
+
+- **Windows 版**：點兩下 Argus.cmd 打開，第一次會自動在開始功能表和桌面建立有 Argus 圖示的捷徑。選資料夾、選 zip 的視窗會跳在瀏覽器前面；介面的「Finder」改稱「檔案總管」。
+- Windows 版一樣支援「立即更新」（下載 `Argus-win-版本.zip`，取代 Argus 資料夾）。
+- 發佈時請同時附上 `Argus-mac-版本.zip` 和 `Argus-win-版本.zip`，兩邊的一鍵更新各自找自己的檔案。
+
+## 2.0.2（2026-11）
 
 - 依實際掃描結果補上更多「多半不用擔心」的規則：TypeScript 型別定義檔（.d.ts）、Markdown 表格的對齊空白、說明文件裡的示範網址（example.com）、README 和 references／examples 說明文件裡的範例、「一律優先用某做法」的寫作建議、JavaScript／TypeScript 副檔名差異、只讀寫檔案的線索、Google 字型、your-api-key／mypassword 這類示範用假密碼。
 - 加上免責聲明：首頁、「關於」、每份報告底部、使用說明。

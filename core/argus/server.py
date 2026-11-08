@@ -54,7 +54,8 @@ def state():
     running = [j for j in jobs._jobs.values() if j.status == 'running']
     return {
         'app': {'name': NAME, 'tagline': TAGLINE, 'version': VERSION, 'copyright': COPYRIGHT, 'license': LICENSE,
-                'disclaimer': DISCLAIMER, 'disclaimer_short': DISCLAIMER_SHORT, 'reports': str(tools.reports_dir())},
+                'disclaimer': DISCLAIMER, 'disclaimer_short': DISCLAIMER_SHORT, 'reports': str(tools.reports_dir()),
+                'platform': 'mac' if tools.IS_MAC else 'win' if tools.IS_WIN else 'other'},
         'scanners': [tool_info(s) for s in scanners.all_scanners()],
         'history': jobs.history(),
         'running': next((j.id for j in running if j.kind == 'scan'), None),
@@ -160,7 +161,7 @@ class Handler(BaseHTTPRequestHandler):
                 app = updates.app_bundle()
                 if app is None:
                     return self.send(400, {'error': '找不到 Argus 的位置，請自己重新打開 Argus。'})
-                native.open_path(app)
+                native.relaunch(app)
                 threading.Timer(1.5, self.server.shutdown).start()
                 return self.send(200, {'ok': True})
             if path == '/api/quit':   # "結束 Argus": stop now, e.g. when something is stuck

@@ -4,8 +4,9 @@ The check asks GitHub for the latest published release, at most every 12 hours. 
 release information is sent, nothing about the person's skills or reports. Any failure (offline, rate-limited,
 GitHub down) just means no notice is shown.
 
-Updating downloads that release's Mac zip from this project's own GitHub releases, checks it really is a newer
-Argus, swaps it in for the running app (keeping the old one to roll back to), and reopens.
+Updating downloads that release's zip for this system (Argus-mac-… or Argus-win-…) from this project's own GitHub
+releases, checks it really is a newer Argus, swaps it in for the running copy (keeping the old one to roll back
+to), and reopens. On a Mac the copy is Argus.app; on Windows it's the Argus folder holding Argus.cmd and app\.
 """
 
 import json
@@ -24,9 +25,15 @@ REPO = 'squaresu/argus'
 API = f'https://api.github.com/repos/{REPO}/releases/latest'
 RELEASES = f'https://github.com/{REPO}/releases/latest'
 DOWNLOADS = f'https://github.com/{REPO}/releases/download/'
-ASSET = re.compile(r'^Argus-mac-[\d.]+\.zip$')
 EVERY = 12 * 3600
 MAX_ZIP = 50 * 1024 * 1024
+
+APP_ID = 'local.argus.skill-scanner'   # in the Mac Info.plist and the Windows app\argus-app.id
+
+
+def asset_pattern():
+    return re.compile(r'^Argus-%s-[\d.]+\.zip$' % ('win' if tools.IS_WIN else 'mac'))
+
 
 _result = {'checked': False, 'latest': '', 'url': RELEASES, 'asset': '', 'newer': False, 'auto': False, 'why_manual': ''}
 
@@ -50,14 +57,20 @@ def fetch():
     req = urllib.request.Request(API, headers={'Accept': 'application/vnd.github+json', 'User-Agent': f'Argus/{VERSION}'})
     with urllib.request.urlopen(req, timeout=10) as resp:
         data = json.loads(resp.read().decode('utf-8'))
-    asset = next((a.get('browser_download_url') for a in data.get('assets') or [] if ASSET.match(a.get('name') or '')), '')
+    pattern = asset_pattern()
+    asset = next((a.get('browser_download_url') for a in data.get('assets') or [] if pattern.match(a.get('name') or '')), '')
     return (data.get('tag_name') or '').lstrip('vV'), data.get('html_url') or RELEASES, asset or ''
 
 
+def is_argus_copy(path: Path):
+    """An installed Argus: Argus.app on a Mac, or the Windows folder with Argus.cmd and app\."""
+    return path.suffix == '.app' or ((path / 'Argus.cmd').is_file() and (path / 'app').is_dir())
+
+
 def app_bundle():
-    """The Argus.app this code is running from, or None (e.g. run from source)."""
+    """The installed copy of Argus this code is running from, or None (e.g. run from source)."""
     for parent in Path(__file__).resolve().parents:
-        if parent.suffix == '.app':
+        if is_argus_copy(parent):
             return parent
     return None
 
@@ -65,10 +78,12 @@ def app_bundle():
 def why_manual(app=None):
     """Why a one-click update can't work here, or ''."""
     app = app or app_bundle()
-    if not tools.IS_MAC or app is None:
+    if not (tools.IS_MAC or tools.IS_WIN) or app is None:
         return '這個版本的 Argus 不能自動更新，請手動下載新版。'
-    if 'AppTranslocation' in str(app) or not os.access(app.parent, os.W_OK):
+    if tools.IS_MAC and ('AppTranslocation' in str(app) or not os.access(app.parent, os.W_OK)):
         return 'Argus 不在「應用程式」資料夾裡（或沒有權限修改），沒辦法自動更新。請先把 Argus 拖到「應用程式」資料夾，或手動下載新版。'
+    if tools.IS_WIN and not os.access(app.parent, os.W_OK):
+        return 'Argus 放在沒有權限修改的資料夾裡，沒辦法自動更新。請把 Argus 資料夾搬到「文件」之類的地方，或手動下載新版。'
     return ''
 
 
@@ -93,7 +108,7 @@ def check(fetcher=None):
                                          'asset': asset}), encoding='utf-8')
         except OSError:
             pass
-    reason = why_manual() if asset else '這次的發佈沒有附上 Mac 版的 zip，請手動下載。'
+    reason = why_manual() if asset else '這次的發佈沒有附上這個系統用的 zip，請手動下載。'
     _result.update(checked=True, latest=latest, url=url, asset=asset, newer=is_newer(latest),
                    auto=not reason, why_manual=reason)
     return _result
@@ -140,20 +155,25 @@ def unpack(zip_path: Path, dest: Path):
                     os.chmod(target, mode)
     except zipfile.BadZipFile:
         raise UpdateError('下載的更新檔壞掉了，請再試一次。')
-    apps = list(dest.glob('*.app'))
+    apps = [p for p in dest.iterdir() if p.is_dir() and is_argus_copy(p)]
     if len(apps) != 1:
         raise UpdateError('更新檔裡找不到 Argus，已經停止。')
     return apps[0]
 
 
 def verify(new_app: Path, version):
-    """The download must be an Argus app of exactly the advertised, newer version."""
-    run = new_app / 'Contents' / 'MacOS' / 'run'
-    init = new_app / 'Contents' / 'Resources' / 'core' / 'argus' / '__init__.py'
-    plist = new_app / 'Contents' / 'Info.plist'
-    if not (run.is_file() and init.is_file() and plist.is_file()):
+    """The download must be an Argus for this system, of exactly the advertised, newer version."""
+    if tools.IS_WIN:
+        run = new_app / 'app' / 'launch.ps1'
+        init = new_app / 'app' / 'core' / 'argus' / '__init__.py'
+        ident = new_app / 'app' / 'argus-app.id'
+    else:
+        run = new_app / 'Contents' / 'MacOS' / 'run'
+        init = new_app / 'Contents' / 'Resources' / 'core' / 'argus' / '__init__.py'
+        ident = new_app / 'Contents' / 'Info.plist'
+    if not (run.is_file() and init.is_file() and ident.is_file()):
         raise UpdateError('更新檔的內容不完整，已經停止。')
-    if 'local.argus.skill-scanner' not in plist.read_text(encoding='utf-8', errors='replace'):
+    if APP_ID not in ident.read_text(encoding='utf-8', errors='replace'):
         raise UpdateError('更新檔不是 Argus，已經停止。')
     m = re.search(r"^VERSION = '([^']+)'", init.read_text(encoding='utf-8'), re.M)
     found = m.group(1) if m else ''
@@ -164,7 +184,7 @@ def verify(new_app: Path, version):
 
 def swap(app: Path, new_app: Path):
     """Put new_app where app is; the old one goes to Argus's folder so it can be put back."""
-    staged = app.parent / f'.{app.stem}-update.app'
+    staged = app.parent / f'.{app.name}-update'
     backup = tools.state_dir() / 'previous' / app.name
     shutil.rmtree(staged, ignore_errors=True)
     shutil.rmtree(backup.parent, ignore_errors=True)
@@ -176,8 +196,10 @@ def swap(app: Path, new_app: Path):
         shutil.rmtree(staged, ignore_errors=True)
         if backup.exists() and not app.exists():
             shutil.move(str(backup), str(app))
-        raise UpdateError('macOS 不讓 Argus 替換自己。請到「系統設定 → 隱私權與安全性 → App 管理」允許 Argus，'
-                          f'或手動下載新版。（{err}）')
+        if tools.IS_MAC:
+            raise UpdateError('macOS 不讓 Argus 替換自己。請到「系統設定 → 隱私權與安全性 → App 管理」允許 Argus，'
+                              f'或手動下載新版。（{err}）')
+        raise UpdateError(f'沒辦法替換 Argus 的檔案（可能有檔案正在使用中）。請關掉 Argus 資料夾的視窗後再試，或手動下載新版。（{err}）')
     try:
         os.rename(staged, app)
     except OSError as err:

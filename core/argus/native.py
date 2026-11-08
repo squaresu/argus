@@ -14,8 +14,15 @@ def _osascript(script):
     return p.stdout.strip() if p.returncode == 0 else ''   # non-zero: the person pressed Cancel
 
 
+# an invisible topmost owner window, so the dialog opens in front of the browser instead of behind it;
+# UTF-8 output, so Chinese folder names come back intact
+_PS_PRELUDE = ('[Console]::OutputEncoding = [Text.Encoding]::UTF8; Add-Type -AssemblyName System.Windows.Forms; '
+               '$o = New-Object Windows.Forms.Form -Property @{TopMost=$true; ShowInTaskbar=$false; Opacity=0; '
+               'StartPosition="CenterScreen"}; $o.Show(); $o.Activate(); ')
+
+
 def _powershell(script):
-    cmd = ['powershell', '-NoProfile', '-STA', '-Command', script]
+    cmd = ['powershell', '-NoProfile', '-STA', '-Command', _PS_PRELUDE + script]
     p = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8', creationflags=0x08000000)
     return p.stdout.strip()
 
@@ -25,8 +32,8 @@ def pick_folder():
     if tools.IS_MAC:
         return _osascript('POSIX path of (choose folder with prompt "選擇技能資料夾")').rstrip('/')
     if tools.IS_WIN:
-        return _powershell('Add-Type -AssemblyName System.Windows.Forms; $d = New-Object System.Windows.Forms.FolderBrowserDialog; '
-                           '$d.Description = "選擇技能資料夾"; if ($d.ShowDialog() -eq "OK") { $d.SelectedPath }')
+        return _powershell('$d = New-Object Windows.Forms.FolderBrowserDialog; $d.Description = "選擇技能資料夾"; '
+                           'if ($d.ShowDialog($o) -eq "OK") { $d.SelectedPath }')
     raise Unsupported('這台電腦不支援選擇資料夾，請直接輸入路徑。')
 
 
@@ -34,9 +41,19 @@ def pick_zip():
     if tools.IS_MAC:
         return _osascript('POSIX path of (choose file with prompt "選擇技能的 zip 檔" of type {"zip", "public.zip-archive"})')
     if tools.IS_WIN:
-        return _powershell('Add-Type -AssemblyName System.Windows.Forms; $d = New-Object System.Windows.Forms.OpenFileDialog; '
-                           '$d.Filter = "zip (*.zip)|*.zip"; if ($d.ShowDialog() -eq "OK") { $d.FileName }')
+        return _powershell('$d = New-Object Windows.Forms.OpenFileDialog; $d.Title = "選擇技能的 zip 檔"; '
+                           '$d.Filter = "zip (*.zip)|*.zip"; if ($d.ShowDialog($o) -eq "OK") { $d.FileName }')
     raise Unsupported('這台電腦不支援選擇檔案，請直接輸入路徑。')
+
+
+def relaunch(app):
+    """Start the Argus at `app` (the .app on a Mac, the Argus folder on Windows) as if double-clicked."""
+    if tools.IS_WIN:
+        launcher = str(app / 'app' / 'launch.ps1')
+        subprocess.Popen(['powershell', '-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden',
+                          '-File', launcher], creationflags=0x00000008 | 0x00000200, close_fds=True)   # detached
+    else:
+        subprocess.Popen(['open', '-n', str(app)])
 
 
 def open_path(path):

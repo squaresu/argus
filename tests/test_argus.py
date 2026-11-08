@@ -307,18 +307,18 @@ class SelfUpdate(unittest.TestCase):
         return (app / 'Contents' / 'Resources' / 'core' / 'argus' / '__init__.py').read_text()
 
     def test_update_replaces_app_and_keeps_old_one(self):
-        self.run_update(self.zip_of('2.0.3'), '2.0.3')
-        self.assertIn('2.0.3', self.version_of(self.app))
+        self.run_update(self.zip_of('99.0.0'), '99.0.0')
+        self.assertIn('99.0.0', self.version_of(self.app))
         self.assertTrue(os.access(self.app / 'Contents' / 'MacOS' / 'run', os.X_OK))   # still launchable
         self.assertIn('2.0.2', self.version_of(self.tmp / 'state' / 'previous' / 'Argus.app'))
 
     def test_refuses_wrong_version_or_not_argus(self):
         with self.assertRaisesRegex(updates.UpdateError, '版本'):
-            self.run_update(self.zip_of('2.0.3'), '2.0.4')            # not what the release says
+            self.run_update(self.zip_of('99.0.0'), '99.0.1')          # not what the release says
         with self.assertRaisesRegex(updates.UpdateError, '版本'):
-            self.run_update(self.zip_of('2.0.1'), '2.0.1')            # older
+            self.run_update(self.zip_of('0.9.0'), '0.9.0')            # older than this Argus
         with self.assertRaisesRegex(updates.UpdateError, '不是 Argus'):
-            self.run_update(self.zip_of('3.0.0', bundle='com.evil.app'), '3.0.0')
+            self.run_update(self.zip_of('99.1.0', bundle='com.evil.app'), '99.1.0')
         self.assertIn('2.0.2', self.version_of(self.app))              # untouched every time
 
     def test_only_official_downloads(self):
@@ -326,7 +326,7 @@ class SelfUpdate(unittest.TestCase):
             updates.download('https://evil.example/Argus-mac-9.zip', self.tmp / 'x.zip')
 
     def test_failed_swap_puts_old_app_back(self):
-        new_app = updates.unpack(self.zip_of('2.0.3'), self.tmp / 'unpacked')
+        new_app = updates.unpack(self.zip_of('99.0.0'), self.tmp / 'unpacked')
         real_rename = os.rename
 
         def broken(a, b):
@@ -338,6 +338,70 @@ class SelfUpdate(unittest.TestCase):
         finally:
             os.rename = real_rename
         self.assertIn('2.0.2', self.version_of(self.app))
+
+
+
+class WindowsUpdate(unittest.TestCase):
+    """The same one-click update, on a pretend Windows install: an Argus folder with Argus.cmd and app\\."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.saved = tools.state_dir, tools.IS_MAC, tools.IS_WIN, updates.download
+        tools.state_dir = lambda: self.tmp / 'state'
+        (self.tmp / 'state').mkdir()
+        tools.IS_MAC, tools.IS_WIN = False, True
+        self.app = self.make(self.tmp / 'Documents' / 'Argus', '2.0.2')
+
+    def tearDown(self):
+        tools.state_dir, tools.IS_MAC, tools.IS_WIN, updates.download = self.saved
+        import shutil
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def make(self, root, version, ident='local.argus.skill-scanner'):
+        (root / 'app' / 'core' / 'argus').mkdir(parents=True)
+        (root / 'Argus.cmd').write_text('@echo off\r\n')
+        (root / 'app' / 'launch.ps1').write_text('# launcher\n')
+        (root / 'app' / 'argus-app.id').write_text(ident)
+        (root / 'app' / 'core' / 'argus' / '__init__.py').write_text(f"VERSION = '{version}'\n")
+        return root
+
+    def zip_of(self, version, **kw):
+        src = self.make(self.tmp / 'build' / version / 'Argus', version, **kw)
+        z = self.tmp / f'Argus-win-{version}.zip'
+        with zipfile.ZipFile(z, 'w') as zf:
+            for f in src.rglob('*'):
+                if f.is_file():
+                    zf.writestr(str(f.relative_to(src.parent)), f.read_bytes())
+            zf.writestr('Argus/使用說明.md', 'doc')
+        return z
+
+    def update(self, zip_path, latest):
+        updates._result.update(newer=True, latest=latest, auto=True,
+                               asset=f'https://github.com/squaresu/argus/releases/download/v{latest}/x.zip')
+        updates.download = lambda url, dest: dest.write_bytes(zip_path.read_bytes())
+
+        class Job:
+            total = done = 0
+            result = None
+
+            def say(self, text):
+                pass
+        updates.apply(Job(), app=self.app)
+
+    def test_picks_the_windows_zip(self):
+        self.assertTrue(updates.asset_pattern().match('Argus-win-2.1.0.zip'))
+        self.assertFalse(updates.asset_pattern().match('Argus-mac-2.1.0.zip'))
+
+    def test_update_replaces_the_folder(self):
+        self.update(self.zip_of('99.0.0'), '99.0.0')
+        self.assertIn('99.0.0', (self.app / 'app' / 'core' / 'argus' / '__init__.py').read_text())
+        self.assertTrue((self.app / 'Argus.cmd').is_file())
+        self.assertTrue((self.tmp / 'state' / 'previous' / 'Argus' / 'Argus.cmd').is_file())   # old one kept
+
+    def test_refuses_something_else(self):
+        with self.assertRaisesRegex(updates.UpdateError, '不是 Argus'):
+            self.update(self.zip_of('99.0.0', ident='something-else'), '99.0.0')
+        self.assertIn('2.0.2', (self.app / 'app' / 'core' / 'argus' / '__init__.py').read_text())
 
 
 if __name__ == '__main__':

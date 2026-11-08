@@ -83,7 +83,7 @@ function renderUpdate() {
   if (state.updating && !updating) watchUpdate(state.updating);
   $('#update-version').textContent = u.latest || '';
   $('#update-current').textContent = state.app.version;
-  $('#update-download').href = u.url || 'https://github.com/squaresu/argus/releases/latest';
+  document.querySelectorAll('.update-download').forEach((a) => { a.href = u.url || 'https://github.com/squaresu/argus/releases/latest'; });
   $('#about-update').textContent = !u.checked ? '' : u.newer ? `有新版本 ${u.latest} 可以下載` : u.latest ? '已經是最新版' : '';
   // the check runs in the background right after Argus starts; look again until it has answered
   clearTimeout(renderUpdate.timer);
@@ -152,6 +152,10 @@ function validate() {
 async function loadState() {
   state = await api('/api/state');
   $('#copyright').textContent = state.app.copyright;
+  // wording for this system: Finder or 檔案總管, and which manual-update steps to show
+  const win = state.app.platform === 'win';
+  document.querySelectorAll('.file-manager').forEach((el) => { el.textContent = win ? '檔案總管' : ' Finder '; });
+  document.querySelectorAll('[data-os]').forEach((el) => { el.hidden = el.dataset.os !== (win ? 'win' : 'mac'); });
   $('#disclaimer-short').textContent = `⚠︎ ${state.app.disclaimer_short}`;
   $('#about-disclaimer').textContent = state.app.disclaimer;
   $('#about-copyright').textContent = state.app.copyright;

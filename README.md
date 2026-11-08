@@ -6,7 +6,7 @@
 
 名字來自希臘神話裡的百眼巨人 Argus Panoptes：身上的眼睛輪流守望，從不全部閉上。
 
-- 使用者請看：[docs/使用說明.md](docs/使用說明.md)
+- 使用者請看：[Mac 使用說明](docs/使用說明.md)、[Windows 使用說明](docs/使用說明-Windows.md)
 - 想加入新的掃描工具：[docs/新增掃描工具.md](docs/新增掃描工具.md)
 
 ## 目前整合的工具
@@ -31,11 +31,12 @@ core/argus/            核心，只用 Python 標準函式庫；Mac 和之後的
   scanners/            每個掃描工具一個檔案；加檔案就是加工具
   ui/                  網頁介面（HTML / CSS / JS，沒有外部相依）
 mac/                   Mac 啟動器、Info.plist、圖示、打包腳本
+windows/               Windows 啟動器（Argus.cmd、launch.ps1）、圖示、打包腳本
 tests/                 單元測試、各工具輸出的範例、預覽用伺服器
 docs/                  使用說明、開發說明
 ```
 
-**執行流程**：點兩下 App → `mac/run` 確認有 uv → 用 uv 準備的 Python 3.12 在背景啟動 `python -m argus` → 打開瀏覽器。掃描工具各自用 `uv tool install` 裝成獨立環境，彼此的套件版本不會打架。頁面關掉幾分鐘後，伺服器自動結束。
+**執行流程**：點兩下 App（Windows 是 `Argus.cmd` 或開始功能表的捷徑）→ `mac/run`／`windows/launch.ps1` 確認有 uv → 用 uv 準備的 Python 3.12 在背景啟動 `python -m argus` → 打開瀏覽器。掃描工具各自用 `uv tool install` 裝成獨立環境，彼此的套件版本不會打架。頁面關掉幾分鐘後，伺服器自動結束。
 
 ## 開發
 
@@ -49,15 +50,15 @@ python3 tests/preview_server.py        # 打開它印出的網址
 # 直接啟動（會用到電腦上已經裝好的真工具）
 PYTHONPATH=core python3 -m argus --open
 
-# 打包 Mac App → dist/Argus-mac-<版本>.zip
+# 打包 → dist/Argus-mac-<版本>.zip、dist/Argus-win-<版本>.zip
 bash mac/build.sh
+bash windows/build.sh
 ```
 
 需要 Python 3.12 以上。
 
 ## 接下來可以做的
 
-- **Windows 版**：核心已經是跨平台的，`native.py` 也寫好了 Windows 的選檔案方式；還差一個 Windows 啟動器（取代 `mac/run`）和打包腳本。
 - **更多工具**：例如 [OSV-Scanner](https://github.com/google/osv-scanner)（套件漏洞）、[Semgrep CE](https://github.com/semgrep/semgrep)（更多語言的程式檢查）。
 - **選配的 AI 判斷**：Cisco Skill Scanner 和 SkillSpector 都支援用 AI 再確認一次，可以做成「有金鑰才開、預設關閉」的進階選項。
 
