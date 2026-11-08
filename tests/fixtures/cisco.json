@@ -1,0 +1,6 @@
+{"skill_name":"short-drama","skill_path":"/x","is_safe":false,"max_severity":"HIGH","findings_count":3,
+ "findings":[
+  {"id":"f1","rule_id":"PROMPT_INJECTION_IGNORE","category":"prompt_injection","severity":"HIGH","title":"Instruction override","description":"Text tries to override the agent's instructions.","file_path":"SKILL.md","line_number":12,"snippet":"ignore previous instructions","remediation":"","analyzer":"static","metadata":{}},
+  {"id":"f2","rule_id":"X","category":"autonomy_abuse","severity":"MEDIUM","title":"Autonomy","description":"","file_path":"assets/a.css","line_number":3,"snippet":"","remediation":"","analyzer":"static","metadata":{}},
+  {"id":"f3","rule_id":"INFO1","category":"policy_violation","severity":"INFO","title":"Missing license field","description":"","file_path":"SKILL.md","line_number":1,"snippet":"","remediation":"","analyzer":"static","metadata":{}}
+ ],"scan_duration_seconds":1.2,"duration_ms":1200,"analyzers_used":["static"],"timestamp":"2026-11-08T00:00:00","scan_metadata":{}}

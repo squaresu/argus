@@ -1,0 +1,181 @@
+"""A small web server on this computer only (127.0.0.1) that serves Argus's page and runs its jobs.
+
+Every request must carry the session token (in the page's URL or an X-Argus-Token header) and a localhost
+Host header, so other web pages and other computers can't drive it. It stops by itself a couple of minutes
+after the page is closed.
+"""
+
+import json
+import mimetypes
+import secrets
+import sys
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from urllib.parse import parse_qs, unquote, urlparse
+
+from . import COPYRIGHT, LICENSE, NAME, TAGLINE, VERSION, jobs, native, scanners, targets, tools
+
+UI = Path(__file__).parent / 'ui'
+TOKEN = secrets.token_urlsafe(24)
+IDLE_SECONDS = 150
+_last_seen = time.time()
+_versions = {}            # scanner id → installed version ('' = not installed or broken)
+_versions_ready = threading.Event()
+
+
+def refresh_versions(only=None):
+    todo = [s for s in scanners.all_scanners() if only is None or s.id == only]
+    with ThreadPoolExecutor(4) as pool:
+        for s, v in zip(todo, pool.map(lambda s: s.version(), todo)):
+            _versions[s.id] = v
+    _versions_ready.set()
+
+
+def state():
+    _versions_ready.wait(timeout=60)
+    running = next((j.id for j in jobs._jobs.values() if j.status == 'running'), None)
+    return {
+        'app': {'name': NAME, 'tagline': TAGLINE, 'version': VERSION, 'copyright': COPYRIGHT, 'license': LICENSE,
+                'reports': str(tools.reports_dir())},
+        'scanners': [s.info() | {'version': _versions.get(s.id, ''), 'installed': bool(_versions.get(s.id))}
+                     for s in scanners.all_scanners()],
+        'history': jobs.history(),
+        'running': running,
+        'claude_found': any(r.exists() for r in targets.claude_roots()),
+    }
+
+
+class Handler(BaseHTTPRequestHandler):
+    server_version = f'{NAME}/{VERSION}'
+
+    def log_message(self, *args):   # keep the terminal quiet
+        pass
+
+    # --- plumbing ---
+    def send(self, code, body, ctype='application/json; charset=utf-8'):
+        data = body if isinstance(body, bytes) else (
+            json.dumps(body, ensure_ascii=False) if not isinstance(body, str) else body).encode('utf-8')
+        self.send_response(code)
+        self.send_header('Content-Type', ctype)
+        self.send_header('Content-Length', str(len(data)))
+        self.send_header('Cache-Control', 'no-store')
+        self.send_header('X-Content-Type-Options', 'nosniff')
+        self.end_headers()
+        self.wfile.write(data)
+
+    def allowed(self):
+        host = (self.headers.get('Host') or '').rsplit(':', 1)[0]
+        if host not in ('127.0.0.1', 'localhost'):
+            return False
+        q = parse_qs(urlparse(self.path).query)
+        return secrets.compare_digest(self.headers.get('X-Argus-Token') or (q.get('t') or [''])[0], TOKEN)
+
+    def body(self):
+        n = int(self.headers.get('Content-Length') or 0)
+        try:
+            return json.loads(self.rfile.read(n) or b'{}') if n else {}
+        except ValueError:
+            return {}
+
+    # --- routes ---
+    def do_GET(self):
+        global _last_seen
+        path = urlparse(self.path).path
+        if path == '/api/ping':   # lets the launcher know Argus is already running
+            return self.send(200, {'app': NAME})
+        if not self.allowed():
+            return self.send(403, {'error': '請從 Argus App 打開這個頁面。'})
+        _last_seen = time.time()
+        if path == '/':
+            page = (UI / 'index.html').read_text(encoding='utf-8').replace('__TOKEN__', TOKEN)
+            return self.send(200, page, 'text/html; charset=utf-8')
+        if path.startswith('/ui/'):
+            f = (UI / path[4:]).resolve()
+            if f.is_file() and f.is_relative_to(UI.resolve()):
+                ctype = mimetypes.guess_type(f.name)[0] or 'application/octet-stream'
+                return self.send(200, f.read_bytes(), ctype + ('; charset=utf-8' if ctype.startswith('text') or 'javascript' in ctype else ''))
+            return self.send(404, {'error': 'not found'})
+        if path.startswith('/reports/'):
+            name = unquote(path[len('/reports/'):])
+            f = tools.reports_dir() / name
+            if '/' not in name and '\\' not in name and name.endswith('.html') and f.is_file():
+                return self.send(200, f.read_bytes(), 'text/html; charset=utf-8')
+            return self.send(404, {'error': '找不到這份報告。'})
+        if path == '/api/state':
+            return self.send(200, state())
+        if path.startswith('/api/job/'):
+            job = jobs.get(path.rsplit('/', 1)[1])
+            return self.send(200, job.to_dict()) if job else self.send(404, {'error': '找不到這個工作。'})
+        if path == '/api/alive':
+            return self.send(200, {'ok': True})
+        self.send(404, {'error': 'not found'})
+
+    def do_POST(self):
+        global _last_seen
+        if not self.allowed():
+            return self.send(403, {'error': '請從 Argus App 打開這個頁面。'})
+        _last_seen = time.time()
+        path, data = urlparse(self.path).path, self.body()
+        try:
+            if path == '/api/pick':
+                picked = native.pick_zip() if data.get('kind') == 'zip' else native.pick_folder()
+                return self.send(200, {'path': picked})
+            if path == '/api/scan':
+                if jobs.busy():
+                    return self.send(409, {'error': '已經有工作在進行，請等它完成。'})
+                job = jobs.scan(data.get('kind'), data.get('value'), data.get('scanners') or [])
+                return self.send(200, job.to_dict())
+            if path == '/api/install':
+                if jobs.busy():
+                    return self.send(409, {'error': '已經有工作在進行，請等它完成。'})
+                job = jobs.install(data.get('id'))
+
+                def after(j=job, sid=data.get('id')):   # pick up the new version once the install finishes
+                    while j.status == 'running':
+                        time.sleep(1)
+                    refresh_versions(sid)
+                threading.Thread(target=after, daemon=True).start()
+                return self.send(200, job.to_dict())
+            if path == '/api/open':
+                target = tools.reports_dir()
+                if data.get('file'):
+                    f = target / data['file']
+                    if '/' in data['file'] or not f.is_file():
+                        return self.send(404, {'error': '找不到這份報告。'})
+                    target = f
+                native.open_path(target)
+                return self.send(200, {'ok': True})
+        except (targets.TargetError, native.Unsupported) as err:
+            return self.send(400, {'error': str(err)})
+        self.send(404, {'error': 'not found'})
+
+
+def watchdog(server):
+    while True:
+        time.sleep(15)
+        if time.time() - _last_seen > IDLE_SECONDS and not jobs.busy():
+            server.shutdown()
+            return
+
+
+def main(argv=None):
+    argv = argv if argv is not None else sys.argv[1:]
+    port = int(argv[argv.index('--port') + 1]) if '--port' in argv else 0
+    server = ThreadingHTTPServer(('127.0.0.1', port), Handler)
+    url = f'http://127.0.0.1:{server.server_address[1]}/?t={TOKEN}'
+    threading.Thread(target=refresh_versions, daemon=True).start()
+    if '--no-idle-exit' not in argv:
+        threading.Thread(target=watchdog, args=(server,), daemon=True).start()
+    url_file = tools.state_dir() / 'url'
+    url_file.write_text(url, encoding='utf-8')   # the launcher reads this to open the page
+    print(url, flush=True)
+    if '--open' in argv:
+        native.open_path(url)
+    try:
+        server.serve_forever()
+    finally:
+        if url_file.exists() and url_file.read_text(encoding='utf-8') == url:
+            url_file.unlink()

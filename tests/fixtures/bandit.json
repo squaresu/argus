@@ -1,0 +1,6 @@
+{"errors":[],"generated_at":"2026-11-08T00:00:00Z","metrics":{},
+ "results":[
+  {"code":"subprocess.Popen(cmd, shell=True)\n","filename":"./scripts/run.py","issue_confidence":"HIGH","issue_cwe":{"id":78,"link":""},"issue_severity":"HIGH","issue_text":"subprocess call with shell=True identified, security issue.","line_number":12,"line_range":[12],"more_info":"","test_id":"B602","test_name":"subprocess_popen_with_shell_equals_true"},
+  {"code":"import subprocess\n","filename":"./scripts/run.py","issue_confidence":"HIGH","issue_cwe":{},"issue_severity":"LOW","issue_text":"Consider possible security implications associated with the subprocess module.","line_number":1,"line_range":[1],"more_info":"","test_id":"B404","test_name":"blacklist"},
+  {"code":"assert x\n","filename":"./scripts/run.py","issue_confidence":"HIGH","issue_cwe":{},"issue_severity":"LOW","issue_text":"Use of assert detected.","line_number":5,"line_range":[5],"more_info":"","test_id":"B101","test_name":"assert_used"}
+ ]}

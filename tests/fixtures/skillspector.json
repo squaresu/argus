@@ -1,0 +1,8 @@
+{"skill":{"name":"short-drama","source":"/x"},"risk_assessment":{"score":100,"severity":"CRITICAL","recommendation":"DO_NOT_INSTALL"},
+ "issues":[
+  {"id":"AR1","category":"Anti-Refusal","severity":"HIGH","location":{"file":"assets/dashboard/app.js","start_line":930},"explanation":"Skill instructs the agent to never refuse.","code_snippet":"return `<button>`;"},
+  {"id":"RA1","category":"Rogue Agent","severity":"HIGH","location":{"file":"assets/dashboard/styles.css","start_line":542},"code_snippet":".copybar{}"},
+  {"id":"RA1","category":"Rogue Agent","severity":"HIGH","location":{"file":"scripts/check.py","start_line":101},"code_snippet":"open(__file__, 'w')"},
+  {"id":"LP3","category":"MCP Least Privilege","severity":"MEDIUM","location":{"file":"SKILL.md","start_line":1}},
+  {"id":"TT3","category":"Data Flow","severity":"CRITICAL","location":{"file":"scripts/provider_adapters.py","start_line":926},"explanation":"Credentials flow to a network sink.","code_snippet":"urllib.request.urlopen(request)"}
+ ],"analysis_completeness":{"status":"complete"}}

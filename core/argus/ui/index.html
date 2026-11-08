@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="argus-token" content="__TOKEN__">
+<title>Argus · AI 技能安全掃描</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M2 16c3.5-6.5 8.5-10 14-10s10.5 3.5 14 10c-3.5 6.5-8.5 10-14 10S5.5 22.5 2 16z' fill='none' stroke='%233d5a80' stroke-width='2.4'/%3E%3Ccircle cx='16' cy='16' r='5.2' fill='%233d5a80'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/ui/app.css?t=__TOKEN__">
+</head>
+<body>
+<div class="offline" id="offline" hidden>Argus 已經關閉了（頁面閒置太久時會自動關閉）。請重新打開 Argus App。</div>
+
+<header class="bar">
+  <div class="brand">
+    <svg viewBox="0 0 32 32" width="28" height="28" aria-hidden="true"><path d="M2 16c3.5-6.5 8.5-10 14-10s10.5 3.5 14 10c-3.5 6.5-8.5 10-14 10S5.5 22.5 2 16z" fill="none" stroke="currentColor" stroke-width="2.4"/><circle cx="16" cy="16" r="5.2" fill="currentColor"/><circle cx="17.8" cy="14.2" r="1.6" fill="var(--bg)"/></svg>
+    <div><b>Argus</b><span>AI 技能安全掃描</span></div>
+  </div>
+  <button class="link" id="about-open" type="button">關於</button>
+</header>
+
+<main>
+  <!-- the form -->
+  <section id="view-form">
+    <div class="hero">
+      <h1>安裝 AI 技能之前，先讓 Argus 看一眼。</h1>
+      <p>多個開源安全工具一起檢查，全部在你的電腦上進行，技能內容不會被上傳。</p>
+    </div>
+
+    <div class="card">
+      <h2><span class="step">1</span>要檢查什麼？</h2>
+      <div class="targets" role="radiogroup">
+        <label class="target"><input type="radio" name="kind" value="claude" checked>
+          <span class="ti">✦</span><b>我所有的 Claude 技能</b><small>自動找出這台電腦上裝好的技能和外掛</small></label>
+        <label class="target"><input type="radio" name="kind" value="folder">
+          <span class="ti">▣</span><b>一個資料夾</b><small>下載下來、還沒安裝的技能</small></label>
+        <label class="target"><input type="radio" name="kind" value="zip">
+          <span class="ti">⧉</span><b>一個 zip 檔</b><small>別人傳給你的技能壓縮檔</small></label>
+        <label class="target"><input type="radio" name="kind" value="github">
+          <span class="ti">⌘</span><b>GitHub 網址</b><small>公開的 repo，或裡面某個資料夾</small></label>
+      </div>
+      <div class="detail" id="detail-claude"><p class="muted" id="claude-hint">會檢查 ~/.claude/skills 和 ~/.claude/plugins 裡的每一個技能。</p></div>
+      <div class="detail" id="detail-pick" hidden>
+        <button class="btn" id="pick" type="button">選擇…</button>
+        <span class="path" id="picked">還沒選擇</span>
+      </div>
+      <div class="detail" id="detail-github" hidden>
+        <input id="url" type="url" placeholder="https://github.com/擁有者/repo" spellcheck="false" autocomplete="off">
+      </div>
+    </div>
+
+    <div class="card">
+      <h2><span class="step">2</span>用哪些工具？</h2>
+      <p class="muted small">建議全部勾選，各工具擅長的地方不同。第一次用要先安裝，每個大約 1–3 分鐘。</p>
+      <ul class="scanners" id="scanners"><li class="muted">正在檢查已安裝的工具…</li></ul>
+    </div>
+
+    <div class="go">
+      <button class="btn primary big" id="start" type="button" disabled>開始檢查</button>
+      <p class="muted small" id="start-hint"></p>
+    </div>
+
+    <div class="card" id="history-card" hidden>
+      <h2>最近的報告</h2>
+      <ul class="history" id="history"></ul>
+      <button class="link small" id="open-reports" type="button">在 Finder 裡打開報告資料夾</button>
+    </div>
+  </section>
+
+  <!-- progress -->
+  <section id="view-progress" hidden>
+    <div class="card progress-card">
+      <div class="radar" aria-hidden="true"><span></span></div>
+      <h2 id="p-title">正在檢查…</h2>
+      <p id="p-current" class="muted">準備中…</p>
+      <div class="meter"><div id="p-bar"></div></div>
+      <p class="muted small" id="p-count"></p>
+      <details><summary>詳細紀錄</summary><pre id="p-log"></pre></details>
+    </div>
+  </section>
+
+  <!-- a report -->
+  <section id="view-report" hidden>
+    <div class="toolbar">
+      <button class="btn" id="back" type="button">← 再檢查一次</button>
+      <span class="spacer"></span>
+      <a class="btn" id="report-tab" target="_blank" rel="noopener">在新分頁打開</a>
+      <button class="btn" id="report-finder" type="button">在 Finder 裡顯示</button>
+    </div>
+    <iframe id="report-frame" title="技能安全報告"></iframe>
+  </section>
+</main>
+
+<footer class="foot">
+  <span id="copyright">© 2026 Square Su</span> · 以 MIT 授權開源 · <button class="link" id="about-open-2" type="button">授權與隱私</button>
+</footer>
+
+<dialog id="about">
+  <form method="dialog">
+    <div class="brand big">
+      <svg viewBox="0 0 32 32" width="40" height="40" aria-hidden="true"><path d="M2 16c3.5-6.5 8.5-10 14-10s10.5 3.5 14 10c-3.5 6.5-8.5 10-14 10S5.5 22.5 2 16z" fill="none" stroke="currentColor" stroke-width="2.4"/><circle cx="16" cy="16" r="5.2" fill="currentColor"/><circle cx="17.8" cy="14.2" r="1.6" fill="var(--card)"/></svg>
+      <div><b>Argus</b><span id="about-version"></span></div>
+    </div>
+    <p>名字來自希臘神話裡的百眼巨人 Argus Panoptes：身上的眼睛輪流守望，從不全部閉上。
+      Argus 也一樣，請好幾個開源掃描工具一起看，再把結果整理成一份白話中文報告。</p>
+    <h3>版權與授權</h3>
+    <p><span id="about-copyright"></span>。Argus 以 MIT 授權開源，可以自由使用、修改和分享。</p>
+    <h3>使用的開源掃描工具</h3>
+    <ul class="licences" id="licences"></ul>
+    <p class="small muted">Argus 不夾帶這些工具的程式，而是在你的電腦上安裝各自的官方版本，並遵守各自的授權條款。</p>
+    <h3>隱私</h3>
+    <ul class="plain">
+      <li>所有掃描都在你的電腦上進行，技能內容不會被上傳，也不會送給 AI 服務。</li>
+      <li>會連網的情況只有：安裝工具、下載你指定的 GitHub 技能、查詢套件有沒有已知漏洞（只送出套件名稱到 OSV.dev）。</li>
+      <li>這個頁面只在你的電腦上運作（127.0.0.1），其他電腦連不進來。</li>
+    </ul>
+    <div class="right"><button class="btn primary" value="close">好</button></div>
+  </form>
+</dialog>
+
+<script src="/ui/app.js?t=__TOKEN__"></script>
+</body>
+</html>

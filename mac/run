@@ -1,0 +1,52 @@
+#!/bin/bash
+# Argus: the double-click Mac launcher. Starts Argus's local page (or brings it back) in the browser.
+# a script app can be started under Rosetta on Apple chips; run natively so Python's compiled parts match
+if [ "$(sysctl -n sysctl.proc_translated 2>/dev/null)" = "1" ]; then exec arch -arm64 /bin/bash "$0" "$@"; fi
+export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
+HERE="$(cd "$(dirname "$0")/../Resources" && pwd)"
+APP="Argus"
+STATE="$HOME/Library/Application Support/Argus"
+LOGS="$HOME/Library/Logs/Argus"
+mkdir -p "$STATE" "$LOGS"
+
+say_dialog() {   # message [buttons...]: show a dialog, print the button pressed
+  local msg="$1"; shift
+  local btns="" b
+  for b in "$@"; do btns="$btns\"$b\", "; done
+  btns="{${btns%, }}"
+  osascript -e "button returned of (display dialog \"$msg\" with title \"$APP\" buttons $btns default button 1 with icon note)" 2>/dev/null
+}
+note() { osascript -e "display notification \"$1\" with title \"$APP\"" >/dev/null 2>&1; }
+fail() { osascript -e "display alert \"$APP\" message \"$1\" as critical" >/dev/null 2>&1; exit 1; }
+
+# 1. already running? just bring its page back
+if [ -s "$STATE/url" ]; then
+  url="$(cat "$STATE/url")"
+  if curl -fs --max-time 2 "${url%%/\?*}/api/ping" >/dev/null 2>&1; then open "$url"; exit 0; fi
+fi
+
+# 2. uv runs Argus and installs the scanners
+if ! command -v uv >/dev/null 2>&1; then
+  ans=$(say_dialog "第一次使用 Argus，要先安裝 uv（用來安裝掃描工具的免費開源小程式）。要現在安裝嗎？（需要網路，大約 1 分鐘）" "安裝" "取消")
+  [ "$ans" = "安裝" ] || exit 0
+  note "正在安裝 uv…"
+  curl -LsSf https://astral.sh/uv/install.sh | sh >"$LOGS/uv-install.log" 2>&1 \
+    || fail "安裝 uv 失敗，請檢查網路後再試。（紀錄在 ~/Library/Logs/Argus/uv-install.log）"
+fi
+
+# the same Python the scanners are installed with (see core/argus/tools.py: python_spec)
+PYSPEC=3.12
+[ "$(sysctl -n hw.optional.arm64 2>/dev/null)" = "1" ] && PYSPEC=cpython-3.12-macos-aarch64-none
+
+# 3. start the local page in the background, so this launcher can finish
+rm -f "$STATE/url"
+note "Argus 正在啟動，第一次大約需要 1 分鐘…"
+PYTHONPATH="$HERE/core" nohup uv run --no-project --python "$PYSPEC" python -m argus \
+  </dev/null >"$LOGS/argus.log" 2>&1 &
+disown
+for _ in $(seq 1 360); do
+  [ -s "$STATE/url" ] && break
+  sleep 0.5
+done
+[ -s "$STATE/url" ] || fail "Argus 沒有順利啟動。（紀錄在 ~/Library/Logs/Argus/argus.log）"
+open "$(cat "$STATE/url")"
