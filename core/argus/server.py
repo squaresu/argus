@@ -22,28 +22,42 @@ UI = Path(__file__).parent / 'ui'
 TOKEN = secrets.token_urlsafe(24)
 IDLE_SECONDS = 150
 _last_seen = time.time()
-_versions = {}            # scanner id → installed version ('' = not installed or broken)
-_versions_ready = threading.Event()
+# scanner id → (status, version). status: missing | checking | ok | broken (installed but won't start).
+# Starting a tool to ask its version can take a while (the first start after installing especially),
+# so it runs in the background and the page never waits for it.
+_status = {}
 
 
-def refresh_versions(only=None):
+def check_tools(only=None):
     todo = [s for s in scanners.all_scanners() if only is None or s.id == only]
+    for s in todo:
+        _status[s.id] = ('checking', '') if s.installed() else ('missing', '')
+
+    def one(s):
+        if _status[s.id][0] == 'checking':
+            v = s.version()
+            _status[s.id] = ('ok', v) if v else ('broken', '')
     with ThreadPoolExecutor(4) as pool:
-        for s, v in zip(todo, pool.map(lambda s: s.version(), todo)):
-            _versions[s.id] = v
-    _versions_ready.set()
+        list(pool.map(one, todo))
+
+
+def tool_info(s):
+    status, version = _status.get(s.id, ('checking', ''))
+    if status == 'checking' and not s.installed():
+        status = 'missing'
+    # a tool that's present but still being checked can already be ticked and used
+    return s.info() | {'status': status, 'version': version, 'installed': status in ('ok', 'checking')}
 
 
 def state():
-    _versions_ready.wait(timeout=60)
-    running = next((j.id for j in jobs._jobs.values() if j.status == 'running'), None)
+    running = [j for j in jobs._jobs.values() if j.status == 'running']
     return {
         'app': {'name': NAME, 'tagline': TAGLINE, 'version': VERSION, 'copyright': COPYRIGHT, 'license': LICENSE,
                 'reports': str(tools.reports_dir())},
-        'scanners': [s.info() | {'version': _versions.get(s.id, ''), 'installed': bool(_versions.get(s.id))}
-                     for s in scanners.all_scanners()],
+        'scanners': [tool_info(s) for s in scanners.all_scanners()],
         'history': jobs.history(),
-        'running': running,
+        'running': next((j.id for j in running if j.kind == 'scan'), None),
+        'installing': next(({'id': j.target, 'job': j.id} for j in running if j.kind == 'install'), None),
         'claude_found': any(r.exists() for r in targets.claude_roots()),
     }
 
@@ -85,7 +99,7 @@ class Handler(BaseHTTPRequestHandler):
         global _last_seen
         path = urlparse(self.path).path
         if path == '/api/ping':   # lets the launcher know Argus is already running
-            return self.send(200, {'app': NAME})
+            return self.send(200, {'app': NAME, 'version': VERSION})
         if not self.allowed():
             return self.send(403, {'error': '請從 Argus App 打開這個頁面。'})
         _last_seen = time.time()
@@ -131,14 +145,13 @@ class Handler(BaseHTTPRequestHandler):
             if path == '/api/install':
                 if jobs.busy():
                     return self.send(409, {'error': '已經有工作在進行，請等它完成。'})
-                job = jobs.install(data.get('id'))
-
-                def after(j=job, sid=data.get('id')):   # pick up the new version once the install finishes
-                    while j.status == 'running':
-                        time.sleep(1)
-                    refresh_versions(sid)
-                threading.Thread(target=after, daemon=True).start()
+                sid = data.get('id')
+                # the install job checks the tool starts; record that before the job reports done
+                job = jobs.install(sid, on_checked=lambda v: _status.__setitem__(sid, ('ok', v) if v else ('broken', '')))
                 return self.send(200, job.to_dict())
+            if path == '/api/quit':   # "結束 Argus": stop now, e.g. when something is stuck
+                threading.Timer(0.5, self.server.shutdown).start()
+                return self.send(200, {'ok': True})
             if path == '/api/open':
                 target = tools.reports_dir()
                 if data.get('file'):
@@ -166,7 +179,7 @@ def main(argv=None):
     port = int(argv[argv.index('--port') + 1]) if '--port' in argv else 0
     server = ThreadingHTTPServer(('127.0.0.1', port), Handler)
     url = f'http://127.0.0.1:{server.server_address[1]}/?t={TOKEN}'
-    threading.Thread(target=refresh_versions, daemon=True).start()
+    threading.Thread(target=check_tools, daemon=True).start()
     if '--no-idle-exit' not in argv:
         threading.Thread(target=watchdog, args=(server,), daemon=True).start()
     url_file = tools.state_dir() / 'url'

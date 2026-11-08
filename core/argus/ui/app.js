@@ -56,11 +56,13 @@ function renderScanners() {
   if (checked === null) checked = new Set(list.filter((s) => s.default_on).map((s) => s.id));
   $('#scanners').innerHTML = list.map((s) => {
     const busy = installing && installing.id === s.id;
+    const button = (label) => `<button class="btn" type="button" data-install="${esc(s.id)}" ${installing ? 'disabled' : ''}>${label}</button>`;
     const right = busy
       ? `<span class="installing"><span class="spinner"></span><span id="inst-text">安裝中…</span></span>`
-      : s.installed
-        ? `<span class="badge ok" title="${esc(s.version)}">已安裝</span>`
-        : `<button class="btn" type="button" data-install="${esc(s.id)}" ${installing ? 'disabled' : ''}>安裝</button>`;
+      : s.status === 'ok' ? `<span class="badge ok" title="${esc(s.version)}">已安裝</span>`
+      : s.status === 'checking' ? `<span class="badge" title="正在確認這個工具能不能正常啟動">確認中…</span>`
+      : s.status === 'broken' ? `<span class="fix"><span class="badge bad">打不開</span>${button('重新安裝')}</span>`
+      : button('安裝');
     return `<li class="scanner ${s.installed ? '' : 'off'}">
       <input type="checkbox" data-id="${esc(s.id)}" ${checked.has(s.id) ? 'checked' : ''} ${s.installed ? '' : 'disabled'} aria-label="${esc(s.name)}">
       <div><span class="name">${esc(s.name)}</span><span class="vendor">${esc(s.vendor)} · ${esc(s.license)}</span><p>${esc(s.summary)}</p></div>
@@ -101,17 +103,27 @@ async function loadState() {
   $('#about-version').textContent = `${state.app.tagline} · 版本 ${state.app.version}`;
   $('#licences').innerHTML = state.scanners.map((s) =>
     `<li><a href="${esc(s.homepage)}" target="_blank" rel="noopener">${esc(s.name)}</a>（${esc(s.vendor)}）— ${esc(s.license)}</li>`).join('');
+  // an install that was going on when the page was (re)loaded: keep showing it next to its tool
+  if (state.installing && !installing) watchInstall(state.installing.id, state.installing.job);
   renderScanners();
   renderHistory();
-  if (state.running && !installing) follow(state.running);
+  if (state.running && !following) follow(state.running);
+  // tools still being checked: look again shortly
+  clearTimeout(loadState.timer);
+  if (state.scanners.some((s) => s.status === 'checking')) loadState.timer = setTimeout(() => loadState().catch(() => {}), 3000);
 }
 
 // --- jobs ---
 function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
+let following = null;
+
 async function follow(jobId) {
+  following = jobId;
   show('progress');
+  $('#p-back').hidden = true;
   for (;;) {
+    if (following !== jobId) return;
     let job;
     try { job = await api(`/api/job/${jobId}`); } catch (err) { await sleep(1500); continue; }
     $('#p-title').textContent = job.status === 'running' ? '正在檢查…' : job.status === 'done' ? '檢查完成' : '沒有完成';
@@ -119,11 +131,12 @@ async function follow(jobId) {
     $('#p-bar').style.width = job.total ? `${Math.round((job.done / job.total) * 100)}%` : '4%';
     $('#p-count').textContent = job.total ? `${job.done} / ${job.total}` : '';
     $('#p-log').textContent = job.log.join('\n');
-    if (job.status === 'done' && job.result) { await loadState(); openReport(job.result); return; }
-    if (job.status === 'error') {
-      await loadState();
-      setTimeout(() => show('form'), 0);
-      toast(job.error, 8000);
+    if (job.status !== 'running') {
+      following = null;
+      await loadState().catch(() => {});
+      if (job.status === 'done' && job.result) { openReport(job.result); return; }
+      $('#p-back').hidden = false;   // never leave the person on this screen without a way back
+      if (job.status === 'error') { show('form'); toast(job.error, 9000); }
       return;
     }
     await sleep(800);
@@ -133,23 +146,26 @@ async function follow(jobId) {
 async function install(id) {
   try {
     const job = await api('/api/install', { id });
-    installing = { id, job: job.id };
-    renderScanners();
-    for (;;) {
-      await sleep(1000);
-      const j = await api(`/api/job/${job.id}`);
-      const t = $('#inst-text'); if (t) t.textContent = j.current;
-      if (j.status !== 'running') {
-        installing = null;
-        await sleep(1500);   // the server re-checks the tool's version right after
-        await loadState();
-        if (j.status === 'error') toast(j.error, 9000);
-        else { checked.add(id); renderScanners(); toast('安裝完成 ✓'); }
-        return;
-      }
+    watchInstall(id, job.id);
+  } catch (err) { toast(err.message, 8000); }
+}
+
+// follow an install next to its tool; the server has the tool's status ready by the time the job ends
+async function watchInstall(id, jobId) {
+  installing = { id, job: jobId };
+  renderScanners();
+  for (;;) {
+    await sleep(1000);
+    let j;
+    try { j = await api(`/api/job/${jobId}`); } catch { continue; }
+    const t = $('#inst-text'); if (t) t.textContent = j.current;
+    if (j.status !== 'running') {
+      installing = null;
+      if (j.status === 'done') checked.add(id);
+      await loadState().catch(() => {});
+      toast(j.status === 'done' ? '安裝完成 ✓' : j.error, j.status === 'done' ? 4000 : 9000);
+      return;
     }
-  } catch (err) {
-    installing = null; renderScanners(); toast(err.message, 8000);
   }
 }
 
@@ -195,6 +211,12 @@ $('#scanners').addEventListener('click', (ev) => {
 });
 $('#start').addEventListener('click', start);
 $('#back').addEventListener('click', () => { show('form'); validate(); });
+$('#p-back').addEventListener('click', () => { show('form'); validate(); });
+$('#quit').addEventListener('click', async () => {
+  if (!confirm('要結束 Argus 嗎？正在進行的掃描或安裝會被中斷。之後點兩下 Argus 就能重新打開。')) return;
+  try { await api('/api/quit', {}); } catch {}
+  document.body.innerHTML = '<p style="text-align:center;margin-top:30vh;font-size:16px">Argus 已經結束，可以關掉這個分頁了。</p>';
+});
 $('#history').addEventListener('click', (ev) => {
   const li = ev.target.closest('li[data-file]');
   if (li) openReport(li.dataset.file);

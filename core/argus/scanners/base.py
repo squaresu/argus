@@ -41,7 +41,8 @@ class Scanner:
         return ''
 
     def install_command(self, uv):
-        return [uv, 'tool', 'install', '--force', '--reinstall', '--python', tools.python_spec(), self.package]
+        return [uv, 'tool', 'install', '--force', '--reinstall', '--compile-bytecode', '--python', tools.python_spec(),
+                self.package]
 
     # --- the actual work ---
     def applies_to(self, skill_dir: Path):

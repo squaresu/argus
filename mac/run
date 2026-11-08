@@ -19,10 +19,18 @@ say_dialog() {   # message [buttons...]: show a dialog, print the button pressed
 note() { osascript -e "display notification \"$1\" with title \"$APP\"" >/dev/null 2>&1; }
 fail() { osascript -e "display alert \"$APP\" message \"$1\" as critical" >/dev/null 2>&1; exit 1; }
 
-# 1. already running? just bring its page back
+# 1. already running? bring its page back, unless it's an older Argus still running from before an update
+VERSION="$(sed -n "s/^VERSION = '\(.*\)'/\1/p" "$HERE/core/argus/__init__.py")"
 if [ -s "$STATE/url" ]; then
   url="$(cat "$STATE/url")"
-  if curl -fs --max-time 2 "${url%%/\?*}/api/ping" >/dev/null 2>&1; then open "$url"; exit 0; fi
+  ping="$(curl -fs --max-time 2 "${url%%/\?*}/api/ping" 2>/dev/null)"
+  if [ -n "$ping" ]; then
+    case "$ping" in
+      *"\"version\": \"$VERSION\""*) open "$url"; exit 0 ;;
+    esac
+    curl -fs --max-time 2 -X POST -H "X-Argus-Token: ${url##*t=}" "${url%%/\?*}/api/quit" >/dev/null 2>&1
+    sleep 1
+  fi
 fi
 
 # 2. uv runs Argus and installs the scanners

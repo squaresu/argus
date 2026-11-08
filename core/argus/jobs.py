@@ -30,6 +30,7 @@ class Job:
         self.log = []
         self.error = ''
         self.result = None           # a scan: the report's file name
+        self.target = ''             # an install: the scanner id
         self.started = time.time()
 
     def say(self, text):
@@ -39,7 +40,7 @@ class Job:
 
     def to_dict(self):
         return {k: getattr(self, k) for k in ('id', 'kind', 'label', 'status', 'done', 'total', 'current',
-                                              'log', 'error', 'result')}
+                                              'log', 'error', 'result', 'target')}
 
 
 def start(job, work):
@@ -119,7 +120,7 @@ def scan(kind, value, scanner_ids):
 
 # --- installing a scanner ---
 
-def install(scanner_id):
+def install(scanner_id, on_checked=None):
     scanner = scanners.get(scanner_id)
     if scanner is None:
         raise targets.TargetError('不認得的掃描工具。')
@@ -140,12 +141,17 @@ def install(scanner_id):
         job.done = 1
         if code != 0:
             raise targets.TargetError(f'安裝 {scanner.name} 失敗：{tools.last_lines(err)}（完整紀錄在 {log}）')
-        job.say('安裝好了，正在確認能不能正常啟動…')
-        if not scanner.version():
+        job.say('安裝好了，正在確認能不能正常啟動（第一次可能要一分鐘）…')
+        version = scanner.version()
+        if on_checked:
+            on_checked(version)
+        if not version:
             raise targets.TargetError(f'{scanner.name} 裝好了，但打不開。（紀錄在 {log}）')
         job.done = 2
 
-    return start(Job('install', scanner.name), work)
+    job = Job('install', scanner.name)
+    job.target = scanner_id
+    return start(job, work)
 
 
 # --- past reports ---
