@@ -5,27 +5,30 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="argus-token" content="__TOKEN__">
 <title>Argus · AI 技能安全掃描</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M2 16c3.5-6.5 8.5-10 14-10s10.5 3.5 14 10c-3.5 6.5-8.5 10-14 10S5.5 22.5 2 16z' fill='none' stroke='%233d5a80' stroke-width='2.4'/%3E%3Ccircle cx='16' cy='16' r='5.2' fill='%233d5a80'/%3E%3C/svg%3E">
+<link rel="icon" type="image/png" href="/ui/icon.png?t=__TOKEN__">
 <link rel="stylesheet" href="/ui/app.css?t=__TOKEN__">
 </head>
 <body>
 <div class="offline" id="offline" hidden>Argus 已經關閉了（頁面閒置太久時會自動關閉）。請重新打開 Argus App。</div>
 
+<div class="band">
 <header class="bar">
   <div class="brand">
-    <svg viewBox="0 0 32 32" width="28" height="28" aria-hidden="true"><path d="M2 16c3.5-6.5 8.5-10 14-10s10.5 3.5 14 10c-3.5 6.5-8.5 10-14 10S5.5 22.5 2 16z" fill="none" stroke="currentColor" stroke-width="2.4"/><circle cx="16" cy="16" r="5.2" fill="currentColor"/><circle cx="17.8" cy="14.2" r="1.6" fill="var(--bg)"/></svg>
+    <img src="/ui/icon.png?t=__TOKEN__" width="42" height="42" alt="">
     <div><b>Argus</b><span>AI 技能安全掃描</span></div>
   </div>
   <button class="link" id="about-open" type="button">關於</button>
 </header>
+<div class="hero" id="hero">
+  <h1>安裝 AI 技能之前，先讓 Argus 看一眼。</h1>
+  <p>多個開源安全工具一起檢查，全部在你的電腦上進行，技能內容不會被上傳。</p>
+  <span class="scanline" aria-hidden="true"></span>
+</div>
+</div>
 
 <main>
   <!-- the form -->
   <section id="view-form">
-    <div class="hero">
-      <h1>安裝 AI 技能之前，先讓 Argus 看一眼。</h1>
-      <p>多個開源安全工具一起檢查，全部在你的電腦上進行，技能內容不會被上傳。</p>
-    </div>
 
     <div class="card">
       <h2><span class="step">1</span>要檢查什麼？</h2>
@@ -98,7 +101,7 @@
 <dialog id="about">
   <form method="dialog">
     <div class="brand big">
-      <svg viewBox="0 0 32 32" width="40" height="40" aria-hidden="true"><path d="M2 16c3.5-6.5 8.5-10 14-10s10.5 3.5 14 10c-3.5 6.5-8.5 10-14 10S5.5 22.5 2 16z" fill="none" stroke="currentColor" stroke-width="2.4"/><circle cx="16" cy="16" r="5.2" fill="currentColor"/><circle cx="17.8" cy="14.2" r="1.6" fill="var(--card)"/></svg>
+      <img src="/ui/icon.png?t=__TOKEN__" width="48" height="48" alt="">
       <div><b>Argus</b><span id="about-version"></span></div>
     </div>
     <p>名字來自希臘神話裡的百眼巨人 Argus Panoptes：身上的眼睛輪流守望，從不全部閉上。

@@ -30,6 +30,7 @@ function toast(text, ms = 4000) {
 
 function show(view) {
   for (const v of ['form', 'progress', 'report']) $(`#view-${v}`).hidden = v !== view;
+  $('#hero').hidden = view !== 'form';
   window.scrollTo(0, 0);
 }
 
