@@ -27,6 +27,19 @@
 </div>
 
 <main>
+  <div class="update" id="update" hidden>
+    <span class="update-dot" aria-hidden="true"></span>
+    <span><b>有新版本：Argus <span id="update-version"></span></b>　你現在用的是 <span id="update-current"></span></span>
+    <span class="spacer"></span>
+    <span class="update-actions" id="update-actions">
+      <button class="btn primary" id="update-now" type="button">立即更新</button>
+      <button class="btn" id="update-how" type="button">手動更新</button>
+      <button class="link small" id="update-later" type="button">稍後再說</button>
+    </span>
+    <span class="installing" id="update-progress" hidden><span class="spinner"></span><span id="update-text">準備中…</span></span>
+    <span class="update-note small muted" id="update-why" hidden></span>
+  </div>
+
   <!-- the form -->
   <section id="view-form">
 
@@ -100,11 +113,31 @@
   <span id="copyright">© 2026 Square Su</span> · 以 MIT 授權開源 · <button class="link" id="about-open-2" type="button">授權與隱私</button>
 </footer>
 
+<dialog id="update-steps">
+  <form method="dialog">
+    <h3>手動更新 Argus</h3>
+    <ol class="plain">
+      <li><a id="update-download" target="_blank" rel="noopener">到 GitHub 下載新版</a>：下載 <b>Argus-mac-版本.zip</b>，點兩下解壓縮。</li>
+      <li>把新的 Argus 拖進「應用程式」資料夾，問要不要取代時按「<b>取代</b>」。</li>
+      <li>點兩下打開新版。Mac 會再擋一次，到「系統設定 → 隱私權與安全性」按「<b>仍要打開</b>」。</li>
+    </ol>
+    <p class="small muted">已經裝好的掃描工具和之前的報告都會保留，不用重裝。舊版如果還開著，新版打開時會自動把它關掉。</p>
+    <div class="right"><button class="btn primary" value="close">知道了</button></div>
+  </form>
+</dialog>
+
+<dialog id="updated">
+  <form method="dialog">
+    <h3 id="updated-title">更新完成</h3>
+    <p id="updated-text">新版 Argus 正在打開，會出現在新的分頁。這個分頁可以關掉了。</p>
+  </form>
+</dialog>
+
 <dialog id="about">
   <form method="dialog">
     <div class="brand big">
       <img src="/ui/icon.png?t=__TOKEN__" width="48" height="48" alt="">
-      <div><b>Argus</b><span id="about-version"></span></div>
+      <div><b>Argus</b><span id="about-version"></span><span id="about-update"></span></div>
     </div>
     <p>名字來自希臘神話裡的百眼巨人 Argus Panoptes：身上的眼睛輪流守望，從不全部閉上。
       Argus 也一樣，請好幾個開源掃描工具一起看，再把結果整理成一份白話中文報告。</p>
@@ -116,7 +149,7 @@
     <h3>隱私</h3>
     <ul class="plain">
       <li>所有掃描都在你的電腦上進行，技能內容不會被上傳，也不會送給 AI 服務。</li>
-      <li>會連網的情況只有：安裝工具、下載你指定的 GitHub 技能、查詢套件有沒有已知漏洞（只送出套件名稱到 OSV.dev）。</li>
+      <li>會連網的情況只有：安裝工具、下載你指定的 GitHub 技能、查詢套件有沒有已知漏洞（只送出套件名稱到 OSV.dev）、到 GitHub 查 Argus 有沒有新版本（最多每 12 小時一次，不會送出任何技能或報告的內容）。</li>
       <li>這個頁面只在你的電腦上運作（127.0.0.1），其他電腦連不進來。</li>
     </ul>
     <h3>免責聲明</h3>

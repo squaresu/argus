@@ -9,7 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 
-from . import report, scanners, targets, tools
+from . import report, scanners, targets, tools, updates
 from .model import Outcome, SkillResult
 
 PARALLEL = 3   # scanner runs at a time; each is its own process
@@ -51,7 +51,7 @@ def start(job, work):
         try:
             work(job)
             job.status = 'done'
-        except targets.TargetError as err:
+        except (targets.TargetError, updates.UpdateError) as err:
             job.status, job.error = 'error', str(err)
         except Exception as err:   # anything unexpected still ends the job with a message
             job.status, job.error = 'error', f'發生未預期的錯誤：{err}'
@@ -152,6 +152,12 @@ def install(scanner_id, on_checked=None):
     job = Job('install', scanner.name)
     job.target = scanner_id
     return start(job, work)
+
+
+# --- updating Argus itself ---
+
+def update():
+    return start(Job('update', '更新 Argus'), updates.apply)
 
 
 # --- past reports ---

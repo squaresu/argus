@@ -112,6 +112,12 @@ input[type=url]:focus { outline: none; border-color: var(--pick-line); }
 @media (prefers-reduced-motion: reduce) { .radar span { animation: none; top: 50%; } .spinner { animation: none; } }
 
 /* report view */
+.update { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; background: var(--card); border: 1px solid var(--line); border-left: 4px solid var(--mint); border-radius: 14px; padding: 10px 14px; margin: 0 0 16px; box-shadow: var(--shadow); font-size: 14px; }
+.update-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--mint); box-shadow: 0 0 8px var(--mint-bright); flex: none; }
+#about-update { display: block; color: var(--link); font-size: 12.5px; }
+.update-actions { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.update-note { flex-basis: 100%; }
+#update-steps a { color: var(--link); }
 .toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 0 0 12px; }
 .spacer { flex: 1; }
 #report-frame { width: 100%; height: calc(100vh - 200px); min-height: 520px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg); }

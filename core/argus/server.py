@@ -16,7 +16,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
-from . import COPYRIGHT, DISCLAIMER, DISCLAIMER_SHORT, LICENSE, NAME, TAGLINE, VERSION, jobs, native, scanners, targets, tools
+from . import (COPYRIGHT, DISCLAIMER, DISCLAIMER_SHORT, LICENSE, NAME, TAGLINE, VERSION, jobs, native, scanners,
+               targets, tools, updates)
 
 UI = Path(__file__).parent / 'ui'
 TOKEN = secrets.token_urlsafe(24)
@@ -57,8 +58,10 @@ def state():
         'scanners': [tool_info(s) for s in scanners.all_scanners()],
         'history': jobs.history(),
         'running': next((j.id for j in running if j.kind == 'scan'), None),
+        'updating': next((j.id for j in running if j.kind == 'update'), None),
         'installing': next(({'id': j.target, 'job': j.id} for j in running if j.kind == 'install'), None),
         'claude_found': any(r.exists() for r in targets.claude_roots()),
+        'update': updates.status(),
     }
 
 
@@ -149,6 +152,17 @@ class Handler(BaseHTTPRequestHandler):
                 # the install job checks the tool starts; record that before the job reports done
                 job = jobs.install(sid, on_checked=lambda v: _status.__setitem__(sid, ('ok', v) if v else ('broken', '')))
                 return self.send(200, job.to_dict())
+            if path == '/api/update':
+                if jobs.busy():
+                    return self.send(409, {'error': '已經有工作在進行，請等它完成再更新。'})
+                return self.send(200, jobs.update().to_dict())
+            if path == '/api/relaunch':   # after an update: open the new Argus, then this one stops
+                app = updates.app_bundle()
+                if app is None:
+                    return self.send(400, {'error': '找不到 Argus 的位置，請自己重新打開 Argus。'})
+                native.open_path(app)
+                threading.Timer(1.5, self.server.shutdown).start()
+                return self.send(200, {'ok': True})
             if path == '/api/quit':   # "結束 Argus": stop now, e.g. when something is stuck
                 threading.Timer(0.5, self.server.shutdown).start()
                 return self.send(200, {'ok': True})
@@ -180,6 +194,7 @@ def main(argv=None):
     server = ThreadingHTTPServer(('127.0.0.1', port), Handler)
     url = f'http://127.0.0.1:{server.server_address[1]}/?t={TOKEN}'
     threading.Thread(target=check_tools, daemon=True).start()
+    threading.Thread(target=updates.check, daemon=True).start()
     if '--no-idle-exit' not in argv:
         threading.Thread(target=watchdog, args=(server,), daemon=True).start()
     url_file = tools.state_dir() / 'url'

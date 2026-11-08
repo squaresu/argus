@@ -1,6 +1,7 @@
 """Run with:  python3 -m unittest discover tests   (from the project folder)"""
 
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -10,7 +11,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / 'core'))
 
-from argus import report, scanners, targets  # noqa: E402
+from argus import report, scanners, targets, tools, updates  # noqa: E402
 from argus.model import Outcome, SkillResult  # noqa: E402
 from argus.scanners import bandit, cisco, secrets, skillspector  # noqa: E402
 
@@ -208,6 +209,135 @@ class Report(unittest.TestCase):
         r = SkillResult('x', '/x', [Outcome('a', 'SAFE'), Outcome('b', 'ERROR'), Outcome('c', 'SKIPPED')])
         self.assertEqual(r.verdict, 'SAFE')
         self.assertEqual(SkillResult('y', '/y', [Outcome('a', 'ERROR')]).verdict, 'ERROR')
+
+
+
+class Updates(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self._state_dir = tools.state_dir
+        tools.state_dir = lambda: Path(self.tmp.name)
+        updates._result.update(checked=False, latest='', newer=False)
+
+    def tearDown(self):
+        tools.state_dir = self._state_dir
+        self.tmp.cleanup()
+
+    def test_versions(self):
+        self.assertTrue(updates.is_newer('v2.0.10', '2.0.9'))     # numbers, not text: 10 > 9
+        self.assertTrue(updates.is_newer('2.1', '2.0.2'))
+        self.assertFalse(updates.is_newer('v2.0.2', '2.0.2'))
+        self.assertFalse(updates.is_newer('v1.9.0', '2.0.2'))
+        self.assertFalse(updates.is_newer('', '2.0.2'))
+
+    def test_newer_release_found_and_cached(self):
+        calls = []
+
+        def fetch():
+            calls.append(1)
+            return ('9.0.0', 'https://github.com/squaresu/argus/releases/tag/v9.0.0',
+                    'https://github.com/squaresu/argus/releases/download/v9.0.0/Argus-mac-9.0.0.zip')
+        r = updates.check(fetch)
+        self.assertTrue(r['newer'])
+        self.assertEqual(r['latest'], '9.0.0')
+        updates.check(fetch)                  # within 12 hours: answered from the cache
+        self.assertEqual(len(calls), 1)
+
+    def test_offline_shows_nothing(self):
+        def fetch():
+            raise OSError('no network')
+        r = updates.check(fetch)
+        self.assertTrue(r['checked'])
+        self.assertFalse(r['newer'])
+
+
+
+class SelfUpdate(unittest.TestCase):
+    """Updating in place, on a pretend /Applications/Argus.app."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self._state_dir = tools.state_dir
+        tools.state_dir = lambda: self.tmp / 'state'
+        (self.tmp / 'state').mkdir()
+        self._is_mac, tools.IS_MAC = tools.IS_MAC, True   # the checks being tested are Mac-only
+        self._download = updates.download
+        self.app = self.make_app(self.tmp / 'Applications' / 'Argus.app', '2.0.2')
+
+    def tearDown(self):
+        tools.state_dir = self._state_dir
+        tools.IS_MAC = self._is_mac
+        updates.download = self._download
+        import shutil
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def make_app(self, path, version, bundle='local.argus.skill-scanner'):
+        (path / 'Contents' / 'MacOS').mkdir(parents=True)
+        (path / 'Contents' / 'Resources' / 'core' / 'argus').mkdir(parents=True)
+        (path / 'Contents' / 'Info.plist').write_text(f'<string>{bundle}</string>')
+        (path / 'Contents' / 'MacOS' / 'run').write_text('#!/bin/bash\n')
+        (path / 'Contents' / 'Resources' / 'core' / 'argus' / '__init__.py').write_text(f"VERSION = '{version}'\n")
+        return path
+
+    def zip_of(self, version, **kw):
+        src = self.make_app(self.tmp / 'build' / version / 'Argus.app', version, **kw)
+        z = self.tmp / f'Argus-mac-{version}.zip'
+        with zipfile.ZipFile(z, 'w') as zf:
+            for f in src.rglob('*'):
+                info = zipfile.ZipInfo(str(f.relative_to(src.parent)))
+                info.external_attr = (0o755 if f.name == 'run' else 0o644) << 16
+                if f.is_file():
+                    zf.writestr(info, f.read_bytes())
+        return z
+
+    def run_update(self, zip_path, latest):
+        updates._result.update(newer=True, latest=latest, auto=True,
+                               asset=f'https://github.com/squaresu/argus/releases/download/v{latest}/x.zip')
+        updates.download = lambda url, dest: dest.write_bytes(zip_path.read_bytes())
+
+        class Job:
+            total = done = 0
+            result = None
+
+            def say(self, text):
+                pass
+        updates.apply(Job(), app=self.app)
+
+    def version_of(self, app):
+        return (app / 'Contents' / 'Resources' / 'core' / 'argus' / '__init__.py').read_text()
+
+    def test_update_replaces_app_and_keeps_old_one(self):
+        self.run_update(self.zip_of('2.0.3'), '2.0.3')
+        self.assertIn('2.0.3', self.version_of(self.app))
+        self.assertTrue(os.access(self.app / 'Contents' / 'MacOS' / 'run', os.X_OK))   # still launchable
+        self.assertIn('2.0.2', self.version_of(self.tmp / 'state' / 'previous' / 'Argus.app'))
+
+    def test_refuses_wrong_version_or_not_argus(self):
+        with self.assertRaisesRegex(updates.UpdateError, '版本'):
+            self.run_update(self.zip_of('2.0.3'), '2.0.4')            # not what the release says
+        with self.assertRaisesRegex(updates.UpdateError, '版本'):
+            self.run_update(self.zip_of('2.0.1'), '2.0.1')            # older
+        with self.assertRaisesRegex(updates.UpdateError, '不是 Argus'):
+            self.run_update(self.zip_of('3.0.0', bundle='com.evil.app'), '3.0.0')
+        self.assertIn('2.0.2', self.version_of(self.app))              # untouched every time
+
+    def test_only_official_downloads(self):
+        with self.assertRaisesRegex(updates.UpdateError, '官方'):
+            updates.download('https://evil.example/Argus-mac-9.zip', self.tmp / 'x.zip')
+
+    def test_failed_swap_puts_old_app_back(self):
+        new_app = updates.unpack(self.zip_of('2.0.3'), self.tmp / 'unpacked')
+        real_rename = os.rename
+
+        def broken(a, b):
+            raise OSError('disk full')
+        os.rename = broken
+        try:
+            with self.assertRaisesRegex(updates.UpdateError, '還原'):
+                updates.swap(self.app, new_app)
+        finally:
+            os.rename = real_rename
+        self.assertIn('2.0.2', self.version_of(self.app))
 
 
 if __name__ == '__main__':

@@ -71,6 +71,59 @@ function renderScanners() {
   validate();
 }
 
+// "有新版本" notice; 稍後再說 hides it for that version only
+function renderUpdate() {
+  const u = state.update || {};
+  let dismissed = '';
+  try { dismissed = localStorage.getItem('argus-update-dismissed') || ''; } catch {}
+  $('#update').hidden = !((u.newer && u.latest !== dismissed) || state.updating || updating);
+  $('#update-now').hidden = !u.auto;
+  $('#update-why').hidden = u.auto || !u.why_manual;
+  $('#update-why').textContent = u.why_manual || '';
+  if (state.updating && !updating) watchUpdate(state.updating);
+  $('#update-version').textContent = u.latest || '';
+  $('#update-current').textContent = state.app.version;
+  $('#update-download').href = u.url || 'https://github.com/squaresu/argus/releases/latest';
+  $('#about-update').textContent = !u.checked ? '' : u.newer ? `有新版本 ${u.latest} 可以下載` : u.latest ? '已經是最新版' : '';
+  // the check runs in the background right after Argus starts; look again until it has answered
+  clearTimeout(renderUpdate.timer);
+  if (!u.checked) renderUpdate.timer = setTimeout(() => loadState().catch(() => {}), 4000);
+}
+
+let updating = null;
+
+async function startUpdate() {
+  if (!confirm(`要更新到 Argus ${state.update.latest} 嗎？\n\nArgus 會下載新版、換掉現在這一版，再自動重新打開。正在進行的工作會被中斷。`)) return;
+  try { watchUpdate((await api('/api/update', {})).id); } catch (err) { toast(err.message, 8000); }
+}
+
+async function watchUpdate(jobId) {
+  updating = jobId;
+  $('#update').hidden = false;
+  $('#update-actions').hidden = true;
+  $('#update-progress').hidden = false;
+  for (;;) {
+    await sleep(1000);
+    let j;
+    try { j = await api(`/api/job/${jobId}`); } catch { continue; }
+    $('#update-text').textContent = j.current;
+    if (j.status === 'running') continue;
+    updating = null;
+    $('#update-progress').hidden = true;
+    $('#update-actions').hidden = false;
+    if (j.status === 'error') { toast(j.error, 12000); return; }
+    try {
+      await api('/api/relaunch', {});
+      $('#updated').showModal();
+    } catch (err) {
+      $('#updated-title').textContent = '更新完成，請重新打開 Argus';
+      $('#updated-text').textContent = '新版已經裝好了。關掉這個分頁，再從「應用程式」點兩下 Argus 就好。';
+      $('#updated').showModal();
+    }
+    return;
+  }
+}
+
 function renderHistory() {
   const h = state.history || [];
   $('#history-card').hidden = !h.length;
@@ -105,6 +158,7 @@ async function loadState() {
   $('#about-version').textContent = `${state.app.tagline} · 版本 ${state.app.version}`;
   $('#licences').innerHTML = state.scanners.map((s) =>
     `<li><a href="${esc(s.homepage)}" target="_blank" rel="noopener">${esc(s.name)}</a>（${esc(s.vendor)}）— ${esc(s.license)}</li>`).join('');
+  renderUpdate();
   // an install that was going on when the page was (re)loaded: keep showing it next to its tool
   if (state.installing && !installing) watchInstall(state.installing.id, state.installing.job);
   renderScanners();
@@ -214,6 +268,12 @@ $('#scanners').addEventListener('click', (ev) => {
 $('#start').addEventListener('click', start);
 $('#back').addEventListener('click', () => { show('form'); validate(); });
 $('#p-back').addEventListener('click', () => { show('form'); validate(); });
+$('#update-how').addEventListener('click', () => $('#update-steps').showModal());
+$('#update-now').addEventListener('click', startUpdate);
+$('#update-later').addEventListener('click', () => {
+  try { localStorage.setItem('argus-update-dismissed', state.update.latest); } catch {}
+  $('#update').hidden = true;
+});
 $('#quit').addEventListener('click', async () => {
   if (!confirm('要結束 Argus 嗎？正在進行的掃描或安裝會被中斷。之後點兩下 Argus 就能重新打開。')) return;
   try { await api('/api/quit', {}); } catch {}
