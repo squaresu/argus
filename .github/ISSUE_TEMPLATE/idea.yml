@@ -1,0 +1,15 @@
+name: 建議
+description: 想加的功能、想整合的掃描工具，或報告哪裡可以更清楚
+labels: [enhancement]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: 你的建議
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: 為什麼需要？
+      description: 遇到什麼情況、現在不方便的地方。

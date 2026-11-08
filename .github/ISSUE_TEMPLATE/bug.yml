@@ -1,0 +1,51 @@
+name: 問題回報
+description: Argus 打不開、裝不起來、沒掃完，或結果怪怪的
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        謝謝你回報！如果是 Argus 本身的**安全問題**，請不要在這裡公開，改用 Security → Report a vulnerability。
+  - type: textarea
+    id: what
+    attributes:
+      label: 發生了什麼事？
+      description: 你做了什麼、預期會怎樣、實際上怎樣。
+    validations:
+      required: true
+  - type: textarea
+    id: reason
+    attributes:
+      label: 錯誤訊息
+      description: 報告上「沒掃完」括號裡的文字、跳出的錯誤視窗，或截圖，直接貼上即可。
+  - type: dropdown
+    id: step
+    attributes:
+      label: 卡在哪一步？
+      options:
+        - 打開 App
+        - 安裝 uv
+        - 安裝掃描工具
+        - 掃描
+        - 看報告
+        - 其他
+  - type: input
+    id: mac
+    attributes:
+      label: macOS 版本與晶片
+      description: 點左上角  →「關於這台 Mac」，例如：macOS 15.2，M2
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Argus 版本
+      description: 在 Argus 頁面右上角的「關於」裡可以看到，例如 2.0.0
+  - type: textarea
+    id: log
+    attributes:
+      label: 紀錄檔（選填）
+      description: |
+        啟動問題：~/Library/Logs/Argus/argus.log
+        安裝問題：~/Library/Application Support/Argus/install.log
+      render: text

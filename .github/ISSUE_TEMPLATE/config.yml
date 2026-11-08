@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 安全問題（私下回報）
+    url: https://github.com/squaresu/argus/security/advisories/new
+    about: Argus 本身的安全漏洞，請用這裡私下回報，不要公開。
