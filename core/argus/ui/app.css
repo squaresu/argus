@@ -115,6 +115,7 @@ input[type=url]:focus { outline: none; border-color: var(--pick-line); }
 .update { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; background: var(--card); border: 1px solid var(--line); border-left: 4px solid var(--mint); border-radius: 14px; padding: 10px 14px; margin: 0 0 16px; box-shadow: var(--shadow); font-size: 14px; }
 .update-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--mint); box-shadow: 0 0 8px var(--mint-bright); flex: none; }
 #about-update { display: block; color: var(--link); font-size: 12.5px; }
+.brand.big .small-btn { margin-left: auto; font-size: 13px; padding: 5px 12px; }
 .update-actions { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .update-note { flex-basis: 100%; }
 #update-steps a { color: var(--link); }

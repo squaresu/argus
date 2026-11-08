@@ -230,24 +230,29 @@ class Updates(unittest.TestCase):
         self.assertFalse(updates.is_newer('v1.9.0', '2.0.2'))
         self.assertFalse(updates.is_newer('', '2.0.2'))
 
-    def test_newer_release_found_and_cached(self):
-        calls = []
-
-        def fetch():
-            calls.append(1)
-            return ('9.0.0', 'https://github.com/squaresu/argus/releases/tag/v9.0.0',
-                    'https://github.com/squaresu/argus/releases/download/v9.0.0/Argus-mac-9.0.0.zip')
+    def test_asks_github_every_time(self):
+        # the bug this replaces: a release published within 12 hours of the last check went unnoticed
+        releases = iter([('2.0.2', 'u', ''), ('9.0.0', 'u', 'https://github.com/squaresu/argus/releases/download/v9/a.zip')])
+        fetch = lambda: next(releases)   # noqa: E731
+        self.assertFalse(updates.check(fetch)['newer'])
         r = updates.check(fetch)
         self.assertTrue(r['newer'])
         self.assertEqual(r['latest'], '9.0.0')
-        updates.check(fetch)                  # within 12 hours: answered from the cache
-        self.assertEqual(len(calls), 1)
 
-    def test_offline_shows_nothing(self):
-        def fetch():
+    def test_offline_uses_last_answer(self):
+        updates.check(lambda: ('9.0.0', 'u', ''))
+
+        def offline():
             raise OSError('no network')
-        r = updates.check(fetch)
-        self.assertTrue(r['checked'])
+        r = updates.check(offline)
+        self.assertTrue(r['newer'])
+        self.assertFalse(r['failed'])
+
+    def test_offline_with_nothing_saved_shows_nothing(self):
+        def offline():
+            raise OSError('no network')
+        r = updates.check(offline)
+        self.assertTrue(r['checked'] and r['failed'])
         self.assertFalse(r['newer'])
 
 

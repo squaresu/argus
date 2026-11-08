@@ -84,7 +84,7 @@ function renderUpdate() {
   $('#update-version').textContent = u.latest || '';
   $('#update-current').textContent = state.app.version;
   document.querySelectorAll('.update-download').forEach((a) => { a.href = u.url || 'https://github.com/squaresu/argus/releases/latest'; });
-  $('#about-update').textContent = !u.checked ? '' : u.newer ? `有新版本 ${u.latest} 可以下載` : u.latest ? '已經是最新版' : '';
+  $('#about-update').textContent = !u.checked ? '正在檢查有沒有新版本…' : u.newer ? `有新版本 ${u.latest} 可以更新` : u.latest ? '已經是最新版' : u.failed ? '連不上 GitHub，沒辦法檢查新版本' : '';
   // the check runs in the background right after Argus starts; look again until it has answered
   clearTimeout(renderUpdate.timer);
   if (!u.checked) renderUpdate.timer = setTimeout(() => loadState().catch(() => {}), 4000);
@@ -274,6 +274,17 @@ $('#back').addEventListener('click', () => { show('form'); validate(); });
 $('#p-back').addEventListener('click', () => { show('form'); validate(); });
 $('#update-how').addEventListener('click', () => $('#update-steps').showModal());
 $('#update-now').addEventListener('click', startUpdate);
+$('#check-update').addEventListener('click', async () => {
+  $('#check-update').disabled = true;
+  $('#about-update').textContent = '正在檢查…';
+  try {
+    state.update = await api('/api/check-update', {});
+    try { localStorage.removeItem('argus-update-dismissed'); } catch {}   // asked on purpose: show it even if dismissed
+    renderUpdate();
+    if (state.update.newer) { $('#about').close(); window.scrollTo(0, 0); }
+  } catch (err) { $('#about-update').textContent = err.message; }
+  $('#check-update').disabled = false;
+});
 $('#update-later').addEventListener('click', () => {
   try { localStorage.setItem('argus-update-dismissed', state.update.latest); } catch {}
   $('#update').hidden = true;

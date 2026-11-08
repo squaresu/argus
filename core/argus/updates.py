@@ -1,8 +1,8 @@
 """New versions of Argus: notice them, and update in place with one click.
 
-The check asks GitHub for the latest published release, at most every 12 hours. Only a plain request for the
-release information is sent, nothing about the person's skills or reports. Any failure (offline, rate-limited,
-GitHub down) just means no notice is shown.
+The check asks GitHub for the latest published release each time Argus starts, and again when the person presses
+檢查更新. Only a plain request for the release information is sent, nothing about the person's skills or reports.
+When GitHub can't be reached, the last answer is used, or no notice is shown.
 
 Updating downloads that release's zip for this system (Argus-mac-… or Argus-win-…) from this project's own GitHub
 releases, checks it really is a newer Argus, swaps it in for the running copy (keeping the old one to roll back
@@ -25,7 +25,6 @@ REPO = 'squaresu/argus'
 API = f'https://api.github.com/repos/{REPO}/releases/latest'
 RELEASES = f'https://github.com/{REPO}/releases/latest'
 DOWNLOADS = f'https://github.com/{REPO}/releases/download/'
-EVERY = 12 * 3600
 MAX_ZIP = 50 * 1024 * 1024
 
 APP_ID = 'local.argus.skill-scanner'   # in the Mac Info.plist and the Windows app\argus-app.id
@@ -35,7 +34,7 @@ def asset_pattern():
     return re.compile(r'^Argus-%s-[\d.]+\.zip$' % ('win' if tools.IS_WIN else 'mac'))
 
 
-_result = {'checked': False, 'latest': '', 'url': RELEASES, 'asset': '', 'newer': False, 'auto': False, 'why_manual': ''}
+_result = {'checked': False, 'failed': False, 'latest': '', 'url': RELEASES, 'asset': '', 'newer': False, 'auto': False, 'why_manual': ''}
 
 
 class UpdateError(Exception):
@@ -88,28 +87,26 @@ def why_manual(app=None):
 
 
 def check(fetcher=None):
-    """Fill in the result, from the cache if it's recent enough."""
+    """Ask GitHub now. (Reusing an hours-old answer once hid a release published in between, so the saved answer
+    is only a fallback for when GitHub can't be reached.)"""
     fetcher = fetcher or fetch
     cache = tools.state_dir() / 'update.json'
     try:
-        saved = json.loads(cache.read_text(encoding='utf-8'))
-    except (OSError, ValueError):
-        saved = {}
-    if time.time() - saved.get('at', 0) < EVERY and saved.get('latest') and saved.get('for') == VERSION:
-        latest, url, asset = saved['latest'], saved.get('url') or RELEASES, saved.get('asset') or ''
-    else:
+        latest, url, asset = fetcher()
         try:
-            latest, url, asset = fetcher()
-        except Exception:
-            _result['checked'] = True   # offline or the like: no notice, try again next start
-            return _result
-        try:
-            cache.write_text(json.dumps({'at': time.time(), 'for': VERSION, 'latest': latest, 'url': url,
-                                         'asset': asset}), encoding='utf-8')
+            cache.write_text(json.dumps({'at': time.time(), 'latest': latest, 'url': url, 'asset': asset}),
+                             encoding='utf-8')
         except OSError:
             pass
+    except Exception:
+        try:
+            saved = json.loads(cache.read_text(encoding='utf-8'))
+            latest, url, asset = saved['latest'], saved.get('url') or RELEASES, saved.get('asset') or ''
+        except (OSError, ValueError, KeyError):
+            _result.update(checked=True, failed=True)   # offline and nothing saved: no notice
+            return _result
     reason = why_manual() if asset else '這次的發佈沒有附上這個系統用的 zip，請手動下載。'
-    _result.update(checked=True, latest=latest, url=url, asset=asset, newer=is_newer(latest),
+    _result.update(checked=True, failed=False, latest=latest, url=url, asset=asset, newer=is_newer(latest),
                    auto=not reason, why_manual=reason)
     return _result
 

@@ -153,6 +153,8 @@ class Handler(BaseHTTPRequestHandler):
                 # the install job checks the tool starts; record that before the job reports done
                 job = jobs.install(sid, on_checked=lambda v: _status.__setitem__(sid, ('ok', v) if v else ('broken', '')))
                 return self.send(200, job.to_dict())
+            if path == '/api/check-update':   # 「檢查更新」 in About
+                return self.send(200, updates.check())
             if path == '/api/update':
                 if jobs.busy():
                     return self.send(409, {'error': '已經有工作在進行，請等它完成再更新。'})
