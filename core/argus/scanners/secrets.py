@@ -10,20 +10,27 @@ from .base import Scanner, failed
 WHAT = '檔案裡好像直接寫了密碼、API 金鑰或權杖。技能被分享出去，這些機密也會跟著外流。'
 TIP = '看那一行是真的金鑰，還是範例用的假值（例如 sk-xxxx、your-api-key）；真的金鑰不該出現在技能裡。'
 NOISY_TYPES = {'Hex High Entropy String', 'Base64 High Entropy String'}
+# values that are clearly stand-ins: "your-api-key", "<token>", "mypassword", "changeme", "xxxx"…
+PLACEHOLDER_VALUE = re.compile(
+    r'''[=:]\s*["']?(?:your[\w-]*|<[^>]*>|\$\{?\w+\}?|x{3,}|\*{3,}|\.{3,}|my-?password|password\d*|changeme|'''
+    r'''secret|example[\w-]*|placeholder|dummy|test[\w-]*|sample[\w-]*|abc123[\w-]*|1234\w*)["']?\s*,?\s*$''', re.I)
 EXAMPLE_PATH = re.compile(r'(^|/)(tests?|examples?|samples?|fixtures?|docs?)(/|$)|example|sample|mock|fake|dummy', re.I)
 
 
-def masked_line(path, line_no):
-    """The flagged line with long secret-looking runs mostly hidden, so the report doesn't spread the secret."""
+def read_line(path, line_no):
     try:
         with open(path, encoding='utf-8', errors='replace') as fh:
             for n, line in enumerate(fh, 1):
                 if n == line_no:
-                    line = line.strip()[:300]
-                    return re.sub(r'[A-Za-z0-9_\-+/=]{12,}', lambda m: m.group()[:4] + '••••••' + m.group()[-2:], line)
+                    return line.strip()[:300]
     except OSError:
         pass
     return ''
+
+
+def mask(line):
+    """Long secret-looking runs mostly hidden, so the report doesn't spread the secret."""
+    return re.sub(r'[A-Za-z0-9_\-+/=]{12,}', lambda m: m.group()[:4] + '••••••' + m.group()[-2:], line)
 
 
 def parse(data, root=None) -> Outcome:
@@ -34,12 +41,14 @@ def parse(data, root=None) -> Outcome:
             f = Finding(scanner='secrets', title=f'可能寫死的機密（{kind}）', what=WHAT, tip=TIP, severity='MEDIUM',
                         file=filename, line=h.get('line_number'), rule=kind, category=kind,
                         detail=f'detect-secrets: {kind}')
-            if root is not None and f.line:
-                f.snippet = masked_line(root / filename, f.line)
+            raw = read_line(root / filename, f.line) if root is not None and f.line else ''
+            f.snippet = mask(raw)
             if kind in NOISY_TYPES:
                 f.calm = '只是一串看起來很亂的字，常是檔案雜湊、ID 或編碼過的圖片，不一定是密碼。'
             elif EXAMPLE_PATH.search(filename):
                 f.calm = '出現在範例、測試或說明檔裡，常是示範用的假值。'
+            elif PLACEHOLDER_VALUE.search(raw):
+                f.calm = '值是 your-api-key、mypassword 這類示範用的假值，不是真的密碼。'
             findings.append(f)
     real = [f for f in findings if not f.calm]
     return Outcome('secrets', 'CAUTION' if real else 'SAFE', findings,

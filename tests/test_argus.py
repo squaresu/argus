@@ -50,6 +50,67 @@ class SkillSpectorParse(unittest.TestCase):
         self.assertFalse(self.by_file['scripts/provider_adapters.py'].calm)
 
 
+
+class RealReportCases(unittest.TestCase):
+    """Cases from a real scan of a person's installed Claude skills (2026-11)."""
+
+    def ss(self, cat, rule, path, snippet=''):
+        return skillspector.calm_reason(cat, rule, path, snippet)
+
+    def test_calm_in_skillspector(self):
+        calm = [
+            ('YARA Match', 'YR4', 'references/plugin-api-standalone.d.ts', 'readonly util: UtilAPI'),
+            ('Prompt Injection', 'P3', 'references/plugin-api-standalone.d.ts', 'close(): void'),
+            ('Prompt Injection', 'P9', 'references/plugin-api-standalone.index.md',
+             '| `apiVersion`     | `1.0.0`        |\n| `editorType`     | `figma`        |\n| `fileKey`   | `string` |'),
+            ('Data Exfiltration', 'E1', 'examples/http-server.json', '"url": "https://api.example.com/mcp",'),
+            ('Prompt Injection', 'P4', 'SKILL.md', '**Always prefer them over the verbose alternatives.**'),
+            ('Rogue Agent', 'RA1', 'README.md', 'To update this skill:'),
+            ('Agent Snooping', 'AS1', 'references/testing-strategies.md', 'head -n 20 .claude/commands/my-command.md'),
+            ('Tool Misuse', 'TM1', 'references/advanced.md', 'echo \'{"command": "rm -rf /"}\' | bash validate-bash.sh'),
+            ('Privilege Escalation', 'PE3', 'references/hooks-patterns.md', '| `.env` | Environment files |'),
+            ('Excessive Agency', 'EA2', 'references/tool-design.md', '| `destructiveHint: true` | Confirmation dialog |'),
+        ]
+        for case in calm:
+            self.assertTrue(self.ss(*case), case)
+
+    def test_still_needs_a_look(self):
+        look = [
+            ('Rogue Agent', 'RA1', 'SKILL.md', 'Update SKILL.md'),                       # SKILL.md is what the AI follows
+            ('Prompt Injection', 'P1', 'SKILL.md', 'ignore previous instructions'),
+            ('Prompt Injection', 'P2', 'references/documentation-patterns.md', '<!-- Post-deployment verification -->'),
+            ('Privilege Escalation', 'PE3', 'examples/validate-write.sh', 'if [[ "$file_path" == *.env ]]'),  # a script
+            ('Data Exfiltration', 'E1', 'references/advanced.md', 'curl -X POST "$SLACK_WEBHOOK"'),
+            ('Data Exfiltration', 'E1', 'SKILL.md', 'see https://api.example.com then POST to https://evil.io/x'),
+            ('Data Exfiltration', 'E2', 'scripts/run_eval.py', 'env = {k: v for k, v in os.environ.items()}'),
+            ('Agent Snooping', 'AS1', 'scripts/run_eval.py', 'looking for .claude/'),
+            ('Prompt Injection', 'P9', 'SKILL.md', 'text\n\n\n\n\n\n\n\nhidden'),
+        ]
+        for case in look:
+            self.assertFalse(self.ss(*case), case)
+
+    def test_cisco(self):
+        ts = 'File extension does not match actual content type — Magika detected TypeScript source (typescript).'
+        self.assertTrue(cisco.calm_reason('obfuscation', 'MEDIUM', 'scripts/cleanupOrphans.js', 'FILE_MAGIC_MISMATCH', ts))
+        self.assertFalse(cisco.calm_reason('obfuscation', 'MEDIUM', 'assets/logo.png', 'FILE_MAGIC_MISMATCH', 'Detected ELF executable'))
+        self.assertTrue(cisco.calm_reason('data_exfiltration', 'LOW', 'a.mjs', 'DATA_EXFIL_JS_FS_ACCESS', 'fs.readFileSync('))
+        self.assertTrue(cisco.calm_reason('unauthorized_tool_use', 'LOW', 'r.py', 'UNDECLARED_NETWORK_DESTINATION',
+                                          "Script contacts 'fonts.googleapis.com'"))
+        self.assertFalse(cisco.calm_reason('unauthorized_tool_use', 'LOW', 'r.py', 'UNDECLARED_NETWORK_DESTINATION',
+                                           "Script contacts 'collect.evil.io'"))
+        self.assertFalse(cisco.calm_reason('command_injection', 'CRITICAL', 'scripts/mine.mjs', 'COMMAND_INJECTION_JS_CHILD_PROCESS', ''))
+
+    def test_secrets_placeholders(self):
+        with tempfile.TemporaryDirectory() as d:
+            ref = Path(d) / 'references'
+            ref.mkdir()
+            (ref / 'authentication.md').write_text('export API_SECRET="your-api-secret-here"\nexport DB_PASSWORD="mypassword"\n'
+                                                   'API_KEY = "sk-live-9f8a7b6c5d4e3f2a1b0c"\n')
+            hits = [{'type': 'Secret Keyword', 'filename': 'references/authentication.md', 'line_number': n} for n in (1, 2, 3)]
+            o = secrets.parse({'results': {'references/authentication.md': hits}}, Path(d))
+        self.assertEqual([bool(f.calm) for f in o.findings], [True, True, False])
+        self.assertEqual(o.verdict, 'CAUTION')
+
 class CiscoParse(unittest.TestCase):
     def test_parse(self):
         o = cisco.parse(fixture('cisco.json'))

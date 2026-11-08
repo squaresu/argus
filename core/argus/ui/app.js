@@ -99,6 +99,8 @@ function validate() {
 async function loadState() {
   state = await api('/api/state');
   $('#copyright').textContent = state.app.copyright;
+  $('#disclaimer-short').textContent = `⚠︎ ${state.app.disclaimer_short}`;
+  $('#about-disclaimer').textContent = state.app.disclaimer;
   $('#about-copyright').textContent = state.app.copyright;
   $('#about-version').textContent = `${state.app.tagline} · 版本 ${state.app.version}`;
   $('#licences').innerHTML = state.scanners.map((s) =>

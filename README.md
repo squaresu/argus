@@ -61,6 +61,10 @@ bash mac/build.sh
 - **更多工具**：例如 [OSV-Scanner](https://github.com/google/osv-scanner)（套件漏洞）、[Semgrep CE](https://github.com/semgrep/semgrep)（更多語言的程式檢查）。
 - **選配的 AI 判斷**：Cisco Skill Scanner 和 SkillSpector 都支援用 AI 再確認一次，可以做成「有金鑰才開、預設關閉」的進階選項。
 
+## 免責聲明
+
+掃描結果僅供參考，不代表技能一定安全或一定有害。各掃描工具只能找出已知的寫法，可能誤判，也可能漏掉新的或刻意隱藏的手法；「多半不用擔心」是依固定規則分的組，不代表一定沒問題。是否安裝、如何使用，由你自行判斷並承擔風險。Argus 依 MIT 授權「按現狀」提供，不附任何保證，作者不對使用本工具或依結果所做的決定造成的任何損失負責。Argus 是獨立的開源專案，與 NVIDIA、Cisco、PyCQA、Yelp、Anthropic 等公司或組織無關，也沒有獲得它們的背書。
+
 ## 授權
 
 © 2026 Square Su，以 [MIT](LICENSE) 授權開源。整合的掃描工具各自適用自己的授權，見 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。

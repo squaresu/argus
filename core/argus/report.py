@@ -4,7 +4,7 @@ import html
 import json
 from datetime import datetime
 
-from . import COPYRIGHT, NAME, VERSION, scanners, tools
+from . import COPYRIGHT, DISCLAIMER, NAME, VERSION, scanners, tools
 from .model import SEVERITY_ZH, VERDICT_ZH, VERDICTS
 
 ORDER = {v: i for i, v in enumerate(VERDICTS + ['ERROR'])}
@@ -127,6 +127,7 @@ def render(title, results, chosen, versions, when=None):
   <p>由 {NAME} {VERSION} 產生 · {COPYRIGHT} · 以 MIT 授權開源。</p>
   <p>掃描引擎：{licences}。各工具僅做靜態分析，沒有把技能內容送給 AI 服務。
   「多半不用擔心」是 {NAME} 依固定規則分的組，不會改變各工具的結論。</p>
+  <p class="disclaimer"><b>免責聲明：</b>{e(DISCLAIMER)}</p>
 </footer>
 <script type="application/json" id="ask-data">{ask_json}</script>
 <script>{JS}</script>
@@ -190,6 +191,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);border-rad
 button.ask{margin-top:10px;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:999px;padding:6px 14px;font:inherit;font-size:13.5px;cursor:pointer}
 button.ask:hover{background:var(--soft)} button.ask.all{margin:0;background:var(--accent);color:var(--accent-ink);border-color:transparent;font-weight:700;padding:8px 18px}
 footer{color:var(--muted);font-size:12.5px;margin-top:28px;border-top:1px solid var(--line);padding-top:12px} footer p{margin:4px 0}
+.disclaimer{margin-top:10px!important;line-height:1.6}
 @media (max-width:560px){main{padding:24px 14px 48px}.score{margin-left:0;width:100%}.by{margin-left:0}}
 '''
 

@@ -1,9 +1,11 @@
 """NVIDIA SkillSpector: a security scanner made for AI agent skills (static analysis only, no AI key)."""
 
 import json
+import os
 
 from .. import tools
-from ..model import CODE_EXT, STYLE_EXT, Finding, Outcome, clip
+from ..model import (CODE_EXT, PLACEHOLDER_HOST, STYLE_EXT, Finding, Outcome, clip, is_documentation,
+                     is_table_padding, is_type_definitions)
 from .base import Scanner, failed
 
 # what each kind of finding means, and how to tell a real problem from the scanner being cautious
@@ -43,15 +45,31 @@ AI_TEXT_CATS = {'Prompt Injection', 'System Prompt Leakage', 'Anti-Refusal', 'Ro
                 'Excessive Agency', 'Trigger Abuse', 'Harmful Content'}
 # rules that match plain wording ("show your instructions", "never refuse"), not program behaviour
 WORDING_RULES = {'P6', 'P7', 'AR1', 'AR2', 'AR3'}
+# kinds of finding about what a program does; in a README or a references/examples document they are
+# describing or illustrating something, not doing it. Instruction-style findings (prompt injection and
+# the like) are not in this list: the AI does read references as instructions.
+BEHAVIOUR_CATS = {'Privilege Escalation', 'Tool Misuse', 'Agent Snooping', 'Excessive Agency', 'Rogue Agent',
+                  'Dangerous Code Execution'}
 
 
-def calm_reason(category, rule, ext):
+def calm_reason(category, rule, path, snippet=''):
+    ext = os.path.splitext(path)[1].lower()
     if category in REMINDER_CATS:
         return '只是提醒，不是找到問題。'
+    if is_type_definitions(path):
+        return '出現在 TypeScript 型別定義檔（.d.ts）裡。這種檔案只描述程式介面、給編輯器看，不會被執行，多半是誤判。'
     if ext in STYLE_EXT and category in AI_TEXT_CATS:
         return '出現在網頁的樣式檔裡。樣式檔只管顏色和排版，AI 不會讀、也不會執行，多半是誤判。'
     if ext in CODE_EXT and rule in WORDING_RULES:
         return '這條規則找的是「寫給 AI 看的話」，但它出現在程式碼裡，通常只是程式剛好用到 prompt、instructions 之類的字，多半是誤判。'
+    if rule == 'P9' and is_table_padding(snippet):
+        return '這些空白是 Markdown 表格為了對齊欄位留的，不是用來藏東西。'
+    if rule == 'E1' and PLACEHOLDER_HOST.search(snippet) and not PLACEHOLDER_HOST.sub('', snippet).count('://'):
+        return '網址是 example.com、localhost 這類說明文件專用的示範網址，不是真的會連去的地方。'
+    if rule == 'P4':
+        return '只是「一律優先用某種做法」這類寫作建議，不是在暗中操控 AI。'
+    if category in BEHAVIOUR_CATS and is_documentation(path):
+        return '出現在說明文件（README、references、examples）裡，是在說明或舉例，不是技能實際會執行的程式。'
     return ''
 
 
@@ -69,7 +87,7 @@ def parse(data) -> Outcome:
             snippet='' if cat == 'analysis-evasion' else clip(i.get('code_snippet'), 600),
             rule=i.get('id') or '', category=cat, detail=clip(i.get('explanation'), 400),
         )
-        f.calm = calm_reason(cat, f.rule, f.ext)
+        f.calm = calm_reason(cat, f.rule, f.file, i.get('code_snippet') or '')
         findings.append(f)
     verdict = ra.get('recommendation') or 'CAUTION'
     note = ''

@@ -1,5 +1,10 @@
 # 更新紀錄
 
+## 2.0.2（未發佈）
+
+- 依實際掃描結果補上更多「多半不用擔心」的規則：TypeScript 型別定義檔（.d.ts）、Markdown 表格的對齊空白、說明文件裡的示範網址（example.com）、README 和 references／examples 說明文件裡的範例、「一律優先用某做法」的寫作建議、JavaScript／TypeScript 副檔名差異、只讀寫檔案的線索、Google 字型、your-api-key／mypassword 這類示範用假密碼。
+- 加上免責聲明：首頁、「關於」、每份報告底部、使用說明。
+
 ## 2.0.1（2026-11）
 
 - 修正：安裝工具後，勾選框沒有亮起，要重新整理才能用。

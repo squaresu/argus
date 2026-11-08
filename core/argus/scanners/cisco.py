@@ -1,9 +1,10 @@
 """Cisco Skill Scanner: a second skill-focused scanner, run with its rules only (its AI judge needs a key)."""
 
 import json
+import os
 
 from .. import tools
-from ..model import STYLE_EXT, Finding, Outcome, clip
+from ..model import STYLE_EXT, Finding, Outcome, clip, is_type_definitions
 from .base import Scanner, failed
 
 CATEGORY = {
@@ -28,11 +29,24 @@ CATEGORY = {
 AI_TEXT_CATS = {'prompt_injection', 'social_engineering', 'autonomy_abuse', 'harmful_content'}
 
 
-def calm_reason(category, severity, ext):
+# well-known hosts a page loads fonts from
+FONT_HOSTS = ('fonts.googleapis.com', 'fonts.gstatic.com')
+
+
+def calm_reason(category, severity, path, rule='', description=''):
     if severity in ('INFO', 'SAFE'):
         return '只是資訊，不是找到問題。'
+    if is_type_definitions(path):
+        return '出現在 TypeScript 型別定義檔（.d.ts）裡。這種檔案只描述程式介面、給編輯器看，不會被執行，多半是誤判。'
+    ext = os.path.splitext(path)[1].lower()
     if ext in STYLE_EXT and category in AI_TEXT_CATS:
         return '出現在網頁的樣式檔裡。樣式檔只管顏色和排版，AI 不會讀、也不會執行，多半是誤判。'
+    if rule == 'FILE_MAGIC_MISMATCH' and ext in ('.js', '.ts', '.mjs', '.cjs') and 'typescript' in description.lower():
+        return '副檔名是 JavaScript、內容被認成 TypeScript。兩者寫法幾乎一樣，這是命名習慣，不是偽裝。'
+    if rule.startswith('DATA_EXFIL_JS_FS_ACCESS'):
+        return '只是讀寫電腦上的檔案，掃描器拿它當「可能和外流有關」的線索，本身沒有把資料送出去。'
+    if rule == 'UNDECLARED_NETWORK_DESTINATION' and any(h in description for h in FONT_HOSTS):
+        return '連的是 Google 字型，網頁載入字型很常見，不會送出你的資料。'
     return ''
 
 
@@ -51,7 +65,7 @@ def parse(data) -> Outcome:
             snippet=clip(i.get('snippet'), 600), rule=i.get('rule_id') or '', category=cat,
             detail=clip(' — '.join(x for x in (i.get('title'), i.get('description')) if x), 400),
         )
-        f.calm = calm_reason(cat, sev, f.ext)
+        f.calm = calm_reason(cat, sev, f.file, f.rule, i.get('description') or '')
         findings.append(f)
     worst = (data.get('max_severity') or 'SAFE').upper()
     verdict = {'CRITICAL': 'DO_NOT_INSTALL', 'HIGH': 'DO_NOT_INSTALL', 'MEDIUM': 'CAUTION'}.get(worst, 'SAFE')

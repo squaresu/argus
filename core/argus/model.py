@@ -1,6 +1,7 @@
 """The shapes every scanner's results are turned into, so the report can treat all scanners alike."""
 
 import os
+import re
 from dataclasses import asdict, dataclass, field
 
 # verdicts, worst first; SKIPPED (nothing for this scanner to check) and ERROR don't decide a skill's verdict
@@ -70,6 +71,36 @@ class SkillResult:
 
     def to_dict(self):
         return asdict(self) | {'verdict': self.verdict}
+
+
+DOC_EXT = {'.md', '.markdown', '.txt', '.rst'}
+DOC_DIRS = {'references', 'reference', 'examples', 'example', 'docs', 'doc'}
+# example hosts used in documentation, never real destinations
+PLACEHOLDER_HOST = re.compile(r'https?://(?:[\w-]+\.)*(?:example\.(?:com|org|net)|localhost|127\.0\.0\.1)\b', re.I)
+
+
+def is_type_definitions(path):
+    """A TypeScript .d.ts file only describes an interface; nothing in it runs."""
+    return path.lower().endswith('.d.ts')
+
+
+def is_documentation(path):
+    """README, or a text/Markdown file (or example config) under references/, examples/ or docs/.
+
+    SKILL.md itself is not counted: it is what the AI follows as instructions.
+    """
+    parts = path.replace('\\', '/').split('/')
+    name, ext = parts[-1].lower(), os.path.splitext(parts[-1])[1].lower()
+    if name in ('readme.md', 'readme.txt', 'readme'):
+        return True
+    in_docs = len(parts) > 1 and parts[0].lower() in DOC_DIRS
+    return in_docs and (ext in DOC_EXT or (parts[0].lower() in ('examples', 'example') and ext in ('.json', '.yaml', '.yml')))
+
+
+def is_table_padding(snippet):
+    """Most lines are Markdown table rows: the long runs of spaces are just column alignment."""
+    lines = [line.strip().lstrip('*').strip() for line in snippet.splitlines() if line.strip()]
+    return bool(lines) and sum(line.startswith('|') for line in lines) >= max(2, len(lines) * 0.6)
 
 
 def worst_severity(findings):

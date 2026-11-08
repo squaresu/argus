@@ -16,7 +16,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
-from . import COPYRIGHT, LICENSE, NAME, TAGLINE, VERSION, jobs, native, scanners, targets, tools
+from . import COPYRIGHT, DISCLAIMER, DISCLAIMER_SHORT, LICENSE, NAME, TAGLINE, VERSION, jobs, native, scanners, targets, tools
 
 UI = Path(__file__).parent / 'ui'
 TOKEN = secrets.token_urlsafe(24)
@@ -53,7 +53,7 @@ def state():
     running = [j for j in jobs._jobs.values() if j.status == 'running']
     return {
         'app': {'name': NAME, 'tagline': TAGLINE, 'version': VERSION, 'copyright': COPYRIGHT, 'license': LICENSE,
-                'reports': str(tools.reports_dir())},
+                'disclaimer': DISCLAIMER, 'disclaimer_short': DISCLAIMER_SHORT, 'reports': str(tools.reports_dir())},
         'scanners': [tool_info(s) for s in scanners.all_scanners()],
         'history': jobs.history(),
         'running': next((j.id for j in running if j.kind == 'scan'), None),
