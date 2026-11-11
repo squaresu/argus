@@ -767,7 +767,13 @@ class Conclusion(unittest.TestCase):
         calm = Finding(scanner='skillspector', title='t', severity='HIGH', calm='示範用')
         medium = Finding(scanner='skillspector', title='t', severity='MEDIUM')
         self.assertEqual(report.advice(self.result('SAFE'))[0], 'ok')
-        self.assertEqual(report.advice(self.result('DO_NOT_INSTALL', [high]))[0], 'no')
+        self.assertEqual(report.advice(self.result('DO_NOT_INSTALL', [high]))[0], 'ask')   # one tool's alarm
+        critical = Finding(scanner='skillspector', title='t', severity='CRITICAL')
+        self.assertEqual(report.advice(self.result('DO_NOT_INSTALL', [critical]))[0], 'no')
+        second = Finding(scanner='semgrep', title='t', severity='HIGH')
+        self.assertEqual(report.advice(self.result('DO_NOT_INSTALL', [high, second]))[0], 'no')   # two tools agree
+        half = SkillResult('x', '/x', [Outcome('skillspector', 'ERROR', error='e'), Outcome('bandit', 'SAFE')])
+        self.assertEqual(report.advice(half), ('ok', '沒有發現需要擔心的地方。（SkillSpector 沒有掃完）'))
         self.assertEqual(report.advice(self.result('DO_NOT_INSTALL', [medium]))[0], 'ask')
         self.assertEqual(report.advice(self.result('CAUTION', [calm]))[0], 'ok')   # only 多半不用擔心 left
         self.assertEqual(report.advice(self.result('ERROR'))[0], 'ask')
@@ -841,6 +847,17 @@ class Reminder(unittest.TestCase):
 
 
 class ClaudeSkills(unittest.TestCase):
+    def test_one_copy_per_plugin(self):
+        home = Path(tempfile.mkdtemp())
+        old_copy, new_copy = (home / '.claude' / 'plugins' / 'cache' / 'm' / 'figma' / v for v in ('1.0', '2.0'))
+        for d in (old_copy, new_copy):
+            (d / 'skills' / 'figma-use').mkdir(parents=True)
+            (d / 'skills' / 'figma-use' / 'SKILL.md').write_text('x')
+        (home / '.claude' / 'plugins' / 'installed_plugins.json').write_text(json.dumps({'version': 2, 'plugins': {
+            'figma@m': [{'scope': 'project', 'installPath': str(old_copy), 'lastUpdated': '2026-01-01T00:00:00Z'},
+                        {'scope': 'user', 'installPath': str(new_copy), 'lastUpdated': '2026-11-01T00:00:00Z'}]}}))
+        self.assertEqual(targets.installed_plugins(home), [('figma', new_copy)])
+
     def test_only_installed_plugins(self):
         home = Path(tempfile.mkdtemp())
         own = home / '.claude' / 'skills' / 'mine'

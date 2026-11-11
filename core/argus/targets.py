@@ -50,16 +50,25 @@ def installed_plugins(home: Path | None = None):
     for ident, entries in (record.get('plugins') or {}).items():
         if enabled.get(ident) is False:                    # installed but turned off: Claude Code doesn't start it
             continue
-        for entry in entries if isinstance(entries, list) else [entries]:
-            folder = (entry or {}).get('installPath') if isinstance(entry, dict) else None
-            if folder and Path(folder).is_dir():
-                found.append((ident.split('@')[0], Path(folder)))
+        entries = [e for e in (entries if isinstance(entries, list) else [entries])
+                   if isinstance(e, dict) and e.get('installPath') and Path(e['installPath']).is_dir()]
+        if entries:   # one copy per plugin: the most recently installed or updated
+            newest = max(entries, key=lambda e: str(e.get('lastUpdated') or e.get('installedAt') or ''))
+            found.append((ident.split('@')[0], Path(newest['installPath'])))
     known = any(isinstance(e, dict) and e.get('installPath') for v in (record.get('plugins') or {}).values()
                 for e in (v if isinstance(v, list) else [v]))
     if not known and (root / 'cache').is_dir():           # no usable record: what's been downloaded to run
+        latest = {}   # cache/<marketplace>/<plugin>/<version>: older versions stay behind, keep the newest
         for f in sorted((root / 'cache').rglob('plugin.json'))[:200]:
             folder = f.parent.parent if f.parent.name == '.claude-plugin' else f.parent
-            found.append(((_load_json(f) or {}).get('name') or folder.name, folder))
+            try:
+                age = folder.stat().st_mtime
+            except OSError:
+                continue
+            key = folder.parent
+            if key not in latest or age > latest[key][2]:
+                latest[key] = ((_load_json(f) or {}).get('name') or folder.name, folder, age)
+        found += [(name, folder) for name, folder, _ in latest.values()]
     seen, unique = set(), []
     for name, folder in found:
         if folder not in seen:

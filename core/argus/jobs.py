@@ -146,9 +146,11 @@ def scan(kind, value, scanner_ids):
                             outcome = Outcome(scanner.id, 'ERROR', error=f'{type(err).__name__}: {err}')
                         if outcome.verdict != 'ERROR':
                             timing.record(scanner.id, time.time() - began)
+                roots = sorted({str(folder.resolve()), str(folder)}, key=len, reverse=True)
                 for f in outcome.findings:   # show paths relative to the skill, as the person sees it
-                    if f.file.startswith(str(folder)):
-                        f.file = f.file[len(str(folder)):].lstrip('/\\')
+                    root = next((r for r in roots if f.file.startswith(r)), None)
+                    if root:
+                        f.file = f.file[len(root):].lstrip('/\\')
                 with _lock:
                     result.outcomes.append(outcome)
                     job.done += 1

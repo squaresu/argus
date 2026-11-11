@@ -127,7 +127,8 @@ class SkillSpector(Scanner):
 
     def scan(self, skill_dir, work):
         out = work / 'skillspector.json'
-        code, _, err = tools.run([tools.find_exe(self.exe), 'scan', str(skill_dir), '--no-llm',
+        # the real folder: SkillSpector refuses a shortcut (symlink), and ~/.claude/skills often holds those
+        code, _, err = tools.run([tools.find_exe(self.exe), 'scan', str(skill_dir.resolve()), '--no-llm',
                                   '--format', 'json', '--output', str(out)])
         try:
             data = json.loads(out.read_text(encoding='utf-8-sig'))

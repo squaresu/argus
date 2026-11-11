@@ -29,19 +29,24 @@ def advice_word(a, installed):
 
 def advice(r):
     """→ ('ok' | 'ask' | 'no', a sentence why). Built on the scanners' verdicts, then on what's left once the
-    findings Argus's rules count as 多半不用擔心 (and those seen before) are set aside."""
+    findings Argus's rules count as 多半不用擔心 (and those seen before) are set aside. 不建議 needs a critical
+    finding, or serious ones from more than one tool: one tool's alarm alone is a reason to ask, not to drop it."""
     look = [f for f in r.findings if not f.calm and not f.known]
     serious = [f for f in look if f.severity in ('CRITICAL', 'HIGH')]
+    worried = {f.scanner for f in serious}
+    unfinished = [scanner_name(o.scanner) for o in r.outcomes if o.verdict == 'ERROR']
+    missing = f'（{"、".join(unfinished)} 沒有掃完）' if unfinished else ''
     v = r.verdict
     if v == 'ERROR':
         return 'ask', '掃描沒有完成，結果不完整。'
-    if v == 'DO_NOT_INSTALL' and serious:
+    if serious and (any(f.severity == 'CRITICAL' for f in serious) or len(worried) > 1):
         return 'no', f'有 {len(serious)} 項高風險的寫法。除非確定是正常功能，否則先不要用。'
     if v in ('DO_NOT_INSTALL', 'CAUTION') and look:
-        return 'ask', f'有 {len(look)} 項需要看一下。拿不準就按「複製給 Claude 判斷」，或問懂的人。'
+        who = f'只有 {scanner_name(next(iter(worried)))} 標出高風險，' if serious else ''
+        return 'ask', f'{who}有 {len(look)} 項需要看一下。拿不準就按「複製給 Claude 判斷」，或問懂的人。{missing}'
     if r.findings:
-        return 'ok', '標出來的地方都屬於「多半不用擔心」或之前看過的。'
-    return 'ok', '沒有發現需要擔心的地方。'
+        return 'ok', f'標出來的地方都屬於「多半不用擔心」或之前看過的。{missing}'
+    return 'ok', f'沒有發現需要擔心的地方。{missing}'
 
 
 def summary_html(results, installed, unit):
