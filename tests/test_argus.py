@@ -564,5 +564,67 @@ class ReportWithTracking(unittest.TestCase):
         self.assertNotIn('urlopen(<b>)', page)                       # evidence is escaped
 
 
+
+class UpdateCheckOverWeb(unittest.TestCase):
+    """The check reads GitHub's /releases/latest redirect instead of the rate-limited API."""
+
+    def setUp(self):
+        self.saved = updates.location, updates._opener, updates._curl, tools.IS_WIN
+
+    def tearDown(self):
+        updates.location, updates._opener, updates._curl, tools.IS_WIN = self.saved
+
+    def test_version_and_download_from_redirects(self):
+        attached = {'https://github.com/squaresu/argus/releases/download/v2.3.0/Argus-mac-2.3.0.zip'}
+        updates.location = lambda url: ('https://github.com/squaresu/argus/releases/tag/v2.3.0' if url == updates.RELEASES
+                                        else ('https://objects.example/x' if url in attached else ''))
+        tools.IS_WIN = False
+        latest, url, asset = updates.fetch()
+        self.assertEqual((latest, asset.rsplit('/', 1)[-1]), ('2.3.0', 'Argus-mac-2.3.0.zip'))
+        tools.IS_WIN = True                                       # no Windows zip attached: manual update only
+        self.assertEqual(updates.fetch()[2], '')
+
+    def test_reasons(self):
+        import ssl
+        import urllib.error
+        limited = urllib.error.HTTPError(updates.RELEASES, 429, 'Too Many Requests', {}, None)
+        cert = urllib.error.URLError(ssl.SSLCertVerificationError('certificate verify failed'))
+        self.assertIn('限制', updates.why_failed(limited))
+        self.assertIn('憑證', updates.why_failed(cert))
+        self.assertIn('連不上', updates.why_failed(urllib.error.URLError('timed out')))
+
+    def test_certificate_problem_falls_back_to_system_curl(self):
+        import ssl
+        import urllib.error
+
+        class Opener:
+            def open(self, *a, **k):
+                raise urllib.error.URLError(ssl.SSLCertVerificationError('certificate verify failed'))
+
+        class Done:
+            returncode = 0
+            stdout = 'HTTP/2 302\r\nlocation: https://github.com/squaresu/argus/releases/tag/v3.0.0\r\n'
+        calls = []
+        updates._opener = Opener()
+        updates._curl = lambda args, timeout: calls.append(args) or Done()
+        self.assertEqual(updates.location(updates.RELEASES), 'https://github.com/squaresu/argus/releases/tag/v3.0.0')
+        self.assertEqual(calls, [['-I', updates.RELEASES]])
+
+    def test_failed_check_says_why(self):
+        tmp = Path(tempfile.mkdtemp())
+        saved_dir = tools.state_dir
+        tools.state_dir = lambda: tmp
+        try:
+            import urllib.error
+
+            def limited():
+                raise urllib.error.HTTPError(updates.RELEASES, 403, 'rate limited', {}, None)
+            r = updates.check(limited)
+            self.assertTrue(r['failed'])
+            self.assertIn('限制', r['error'])
+        finally:
+            tools.state_dir = saved_dir
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -87,7 +87,7 @@ function renderUpdate() {
   $('#update-version').textContent = u.latest || '';
   $('#update-current').textContent = state.app.version;
   document.querySelectorAll('.update-download').forEach((a) => { a.href = u.url || 'https://github.com/squaresu/argus/releases/latest'; });
-  $('#about-update').textContent = !u.checked ? '正在檢查有沒有新版本…' : u.newer ? `有新版本 ${u.latest} 可以更新` : u.latest ? '已經是最新版' : u.failed ? '連不上 GitHub，沒辦法檢查新版本' : '';
+  $('#about-update').textContent = !u.checked ? '正在檢查有沒有新版本…' : u.newer ? `有新版本 ${u.latest} 可以更新` : u.latest ? '已經是最新版' : u.failed ? `沒辦法檢查新版本：${u.error || '連不上 GitHub'}` : '';
   // the check runs in the background right after Argus starts; look again until it has answered
   clearTimeout(renderUpdate.timer);
   if (!u.checked) renderUpdate.timer = setTimeout(() => loadState().catch(() => {}), 1000);

@@ -13,8 +13,11 @@ import json
 import os
 import re
 import shutil
+import ssl
+import subprocess
 import tempfile
 import time
+import urllib.error
 import urllib.request
 import zipfile
 from pathlib import Path
@@ -22,7 +25,6 @@ from pathlib import Path
 from . import VERSION, tools
 
 REPO = 'squaresu/argus'
-API = f'https://api.github.com/repos/{REPO}/releases/latest'
 RELEASES = f'https://github.com/{REPO}/releases/latest'
 DOWNLOADS = f'https://github.com/{REPO}/releases/download/'
 MAX_ZIP = 50 * 1024 * 1024
@@ -34,7 +36,7 @@ def asset_pattern():
     return re.compile(r'^Argus-%s-[\d.]+\.zip$' % ('win' if tools.IS_WIN else 'mac'))
 
 
-_result = {'checked': False, 'failed': False, 'latest': '', 'url': RELEASES, 'asset': '', 'newer': False, 'auto': False, 'why_manual': ''}
+_result = {'checked': False, 'failed': False, 'error': '', 'latest': '', 'url': RELEASES, 'asset': '', 'newer': False, 'auto': False, 'why_manual': ''}
 
 
 class UpdateError(Exception):
@@ -52,13 +54,71 @@ def is_newer(latest, current=VERSION):
     return bool(a and b and a > b)
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *args, **kwargs):
+        return None
+
+
+_opener = urllib.request.build_opener(_NoRedirect)
+
+
+def is_certificate_error(err):
+    return isinstance(getattr(err, 'reason', None), ssl.SSLCertVerificationError) or 'CERTIFICATE_VERIFY_FAILED' in str(err)
+
+
+def _curl(args, timeout):
+    """The computer's own curl, which trusts what the system trusts (on a company network, often a certificate
+    Python doesn't know). Certificates are still checked."""
+    kwargs = {'creationflags': 0x08000000} if tools.IS_WIN else {}
+    return subprocess.run(['curl', '-sS', '--max-time', str(timeout), *args], capture_output=True, text=True,
+                          timeout=timeout + 5, **kwargs)
+
+
+def location(url):
+    """Where GitHub's web page at url redirects to, or '' when it doesn't (404 and the like)."""
+    req = urllib.request.Request(url, method='HEAD', headers={'User-Agent': f'Argus/{VERSION}'})
+    try:
+        with _opener.open(req, timeout=10):
+            return ''
+    except urllib.error.HTTPError as err:
+        if err.code in (301, 302, 303, 307, 308):
+            return err.headers.get('Location', '')
+        if err.code == 404:
+            return ''
+        raise
+    except urllib.error.URLError as err:
+        if not is_certificate_error(err):
+            raise
+        p = _curl(['-I', url], 10)
+        if p.returncode != 0:
+            raise
+        m = re.search(r'^location:\s*(\S+)', p.stdout, re.I | re.M)
+        return m.group(1) if m else ''
+
+
 def fetch():
-    req = urllib.request.Request(API, headers={'Accept': 'application/vnd.github+json', 'User-Agent': f'Argus/{VERSION}'})
-    with urllib.request.urlopen(req, timeout=10) as resp:
-        data = json.loads(resp.read().decode('utf-8'))
-    pattern = asset_pattern()
-    asset = next((a.get('browser_download_url') for a in data.get('assets') or [] if pattern.match(a.get('name') or '')), '')
-    return (data.get('tag_name') or '').lstrip('vV'), data.get('html_url') or RELEASES, asset or ''
+    """Latest version from GitHub's web page /releases/latest, which redirects to the release's tag. (The GitHub API
+    answers only 60 questions an hour per network address, which an office sharing one address soon uses up.)"""
+    tag_url = location(RELEASES)
+    m = re.search(r'/releases/tag/v?([^/?#]+)$', tag_url)
+    if not m:
+        raise UpdateError('GitHub 沒有回答最新的版本。')
+    latest = m.group(1)
+    asset = f'{DOWNLOADS}v{latest}/Argus-{"win" if tools.IS_WIN else "mac"}-{latest}.zip'
+    if not location(asset):   # the release has no zip for this system attached
+        asset = ''
+    return latest, tag_url, asset
+
+
+def why_failed(err):
+    """The reason a check or download couldn't reach GitHub, in plain words."""
+    if isinstance(err, urllib.error.HTTPError) and err.code in (403, 429):
+        return 'GitHub 暫時限制了查詢次數，過一陣子會自己恢復。'
+    if is_certificate_error(err):
+        return '連線的安全憑證沒辦法驗證，常見於公司網路的資安閘道。可以請 IT 協助，或改用手動更新。'
+    if isinstance(err, UpdateError):
+        return str(err)
+    return '連不上 GitHub，可能是沒有網路，或公司網路擋住了 GitHub。'
 
 
 def is_argus_copy(path: Path):
@@ -98,15 +158,15 @@ def check(fetcher=None):
                              encoding='utf-8')
         except OSError:
             pass
-    except Exception:
+    except Exception as err:
         try:
             saved = json.loads(cache.read_text(encoding='utf-8'))
             latest, url, asset = saved['latest'], saved.get('url') or RELEASES, saved.get('asset') or ''
         except (OSError, ValueError, KeyError):
-            _result.update(checked=True, failed=True)   # offline and nothing saved: no notice
+            _result.update(checked=True, failed=True, error=why_failed(err))   # nothing saved: no notice
             return _result
     reason = why_manual() if asset else '這次的發佈沒有附上這個系統用的 zip，請手動下載。'
-    _result.update(checked=True, failed=False, latest=latest, url=url, asset=asset, newer=is_newer(latest),
+    _result.update(checked=True, failed=False, error='', latest=latest, url=url, asset=asset, newer=is_newer(latest),
                    auto=not reason, why_manual=reason)
     return _result
 
@@ -132,7 +192,11 @@ def download(url, dest: Path):
     except UpdateError:
         raise
     except Exception as err:
-        raise UpdateError(f'下載新版失敗，請檢查網路後再試。（{err}）')
+        if is_certificate_error(err):
+            p = _curl(['-fL', '-o', str(dest), url], 120)
+            if p.returncode == 0 and dest.is_file() and dest.stat().st_size <= MAX_ZIP:
+                return
+        raise UpdateError(f'下載新版失敗：{why_failed(err)}')
 
 
 def unpack(zip_path: Path, dest: Path):

@@ -6,7 +6,7 @@ The core uses only Python's standard library; each scanner is installed as its o
 
 NAME = 'Argus'
 TAGLINE = 'AI 技能安全掃描'
-VERSION = '2.2.0'
+VERSION = '2.2.1'
 COPYRIGHT = '© 2026 Square Su'
 LICENSE = 'MIT'
 
