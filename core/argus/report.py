@@ -294,11 +294,12 @@ CSS = '''
 [data-theme=dark] .pill{color:#172033!important}
 @media print{:root[data-theme=dark]{color-scheme:light;--ink:#172033;--muted:#5b6478;--bg:#fff;--paper:#fff;--card:#fff;--line:#17203326;--brand:#22744c;--safe:#2f855a;--caution:#b7791f;--danger:#b23a2a;--soft:#efebe4}[data-theme=dark] .pill{color:#fff!important}}
 *{box-sizing:border-box}
-*{scrollbar-width:thin;scrollbar-color:#17203338 transparent}
+@supports not selector(::-webkit-scrollbar){*{scrollbar-width:thin;scrollbar-color:#17203338 transparent}[data-theme=dark] *{scrollbar-color:#ece8e040 transparent}}
+html{background:var(--bg)}
 ::-webkit-scrollbar{width:10px;height:10px}::-webkit-scrollbar-track{background:transparent}
 ::-webkit-scrollbar-thumb{background:#17203338;border-radius:999px;border:3px solid transparent;background-clip:padding-box}
 ::-webkit-scrollbar-thumb:hover{background-color:#17203366}
-[data-theme=dark] *{scrollbar-color:#ece8e02e transparent}[data-theme=dark] ::-webkit-scrollbar-thumb{background-color:#ece8e02e}[data-theme=dark] ::-webkit-scrollbar-thumb:hover{background-color:#76d6a080}
+[data-theme=dark] ::-webkit-scrollbar-thumb{background-color:#ece8e040}[data-theme=dark] ::-webkit-scrollbar-thumb:hover{background-color:#76d6a0b3}
 body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.7 -apple-system,BlinkMacSystemFont,"PingFang TC","Microsoft JhengHei UI","Noto Sans TC",sans-serif}
 main{max-width:920px;margin:0 auto;padding:36px 20px 64px}
 .brand{display:flex;align-items:center;gap:8px;font-weight:700;letter-spacing:.04em;margin-bottom:8px}

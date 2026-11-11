@@ -9,6 +9,7 @@
   --shadow: 0 1px 2px #1720330f, 0 8px 24px #1720330a;
   --radius: 18px;
   --thumb: #17203338; --thumb-hover: #17203366; --focus: var(--mint-ink);
+  color-scheme: light;
 }
 /* dark is the default (data-theme="dark" on <html>); 淺色 switches to the light set above */
 :root[data-theme="dark"] {
@@ -16,18 +17,23 @@
   --ink: var(--cream); --muted: #9aa3b5; --bg: #131b2b; --card: var(--navy-800); --soft: var(--navy-700); --line: #ece8e01a;
   --accent: var(--mint); --accent-ink: var(--navy-900); --pick: #1f3a3a; --pick-line: var(--mint); --link: var(--mint);
   --safe: var(--mint); --caution: #e8b04f; --danger: #f07c66; --shadow: none;
-  --thumb: #ece8e02e; --thumb-hover: #76d6a080; --focus: var(--mint);
+  --thumb: #ece8e040; --thumb-hover: #76d6a0b3; --focus: var(--mint);
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; }
+html { background: var(--bg); }
 body {
   background: var(--bg); color: var(--ink); min-height: 100vh; display: flex; flex-direction: column;
   font: 15px/1.65 -apple-system, BlinkMacSystemFont, "PingFang TC", "Microsoft JhengHei UI", "Noto Sans TC", sans-serif;
 }
 [hidden] { display: none !important; }
 
-/* scrollbars in the app's colours: thin, rounded, quiet until hovered */
-* { scrollbar-width: thin; scrollbar-color: var(--thumb) transparent; }
+/* scrollbars in the app's colours: thin, rounded, quiet until hovered. Chrome and Safari draw them from the
+   ::-webkit-scrollbar rules below (Chrome ignores those once scrollbar-color is set, and falls back to plain
+   grey bars with arrows), so the standard properties are only for Firefox. */
+@supports not selector(::-webkit-scrollbar) {
+  * { scrollbar-width: thin; scrollbar-color: var(--thumb) transparent; }
+}
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--thumb); border-radius: 999px; border: 3px solid transparent; background-clip: padding-box; }
