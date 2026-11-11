@@ -55,6 +55,8 @@ def child_env():
     env['PATH'] = os.pathsep.join([str(TOOL_BIN), env.get('PATH', '')])
     # no colours or progress bars in captured output, and UTF-8 even on a Chinese-locale Windows
     env.update(PYTHONUTF8='1', PYTHONIOENCODING='utf-8', NO_COLOR='1', TERM='dumb')
+    # Semgrep would otherwise contact semgrep.dev to check its own version (and hang when it can't reach it)
+    env.update(SEMGREP_ENABLE_VERSION_CHECK='0', SEMGREP_SEND_METRICS='off')
     return env
 
 

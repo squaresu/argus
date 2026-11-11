@@ -18,6 +18,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 from . import (COPYRIGHT, DISCLAIMER, DISCLAIMER_SHORT, LICENSE, NAME, TAGLINE, VERSION, jobs, native, reminder,
                scanners, targets, tools, updates)
+from .scanners.base import is_newer
 
 UI = Path(__file__).parent / 'ui'
 MOVED_PAGE = ('<!doctype html><meta charset="utf-8"><title>Argus</title>'
@@ -31,6 +32,8 @@ _last_seen = time.time()
 # Starting a tool to ask its version can take a while (the first start after installing especially),
 # so it runs in the background and the page never waits for it.
 _status = {}
+_newest = {}             # scanner id → newest published version, looked up once Argus has started
+_newest_done = False
 
 
 def check_tools(only=None):
@@ -46,12 +49,36 @@ def check_tools(only=None):
         list(pool.map(one, todo))
 
 
+def check_newest():
+    """Which installed tools have a newer version out (PyPI, or the tool's GitHub page). Only version numbers
+    are looked up; nothing about this computer or its skills is sent."""
+    global _newest_done
+
+    def one(s):
+        if _status.get(s.id, ('',))[0] != 'ok':
+            return
+        try:
+            _newest[s.id] = s.newest()
+        except Exception as err:   # offline or blocked: just no 有新版 this time
+            print(f'tool version check failed for {s.id}: {err}', file=sys.stderr, flush=True)
+    with ThreadPoolExecutor(4) as pool:
+        list(pool.map(one, scanners.all_scanners()))
+    _newest_done = True
+
+
+def start_checks():
+    check_tools()
+    check_newest()
+
+
 def tool_info(s):
     status, version = _status.get(s.id, ('checking', ''))
     if status == 'checking' and not s.installed():
         status = 'missing'
     # a tool that's present but still being checked can already be ticked and used
-    return s.info() | {'status': status, 'version': version, 'installed': status in ('ok', 'checking')}
+    newest = _newest.get(s.id, '')
+    return s.info() | {'status': status, 'version': version, 'installed': status in ('ok', 'checking'),
+                       'newest': newest, 'outdated': status == 'ok' and is_newer(newest, version)}
 
 
 def state():
@@ -61,6 +88,7 @@ def state():
                 'disclaimer': DISCLAIMER, 'disclaimer_short': DISCLAIMER_SHORT, 'reports': str(tools.reports_dir()),
                 'platform': 'mac' if tools.IS_MAC else 'win' if tools.IS_WIN else 'other'},
         'scanners': [tool_info(s) for s in scanners.all_scanners()],
+        'newest_checked': _newest_done,
         'history': jobs.history(),
         'running': next((j.id for j in running if j.kind == 'scan'), None),
         'updating': next((j.id for j in running if j.kind == 'update'), None),
@@ -213,7 +241,7 @@ def main(argv=None):
     port = int(argv[argv.index('--port') + 1]) if '--port' in argv else 0
     server = ThreadingHTTPServer(('127.0.0.1', port), Handler)
     url = f'http://127.0.0.1:{server.server_address[1]}/?t={TOKEN}'
-    threading.Thread(target=check_tools, daemon=True).start()
+    threading.Thread(target=start_checks, daemon=True).start()
     threading.Thread(target=updates.check, daemon=True).start()
     reminder.recheck()
     if '--no-idle-exit' not in argv:

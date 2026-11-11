@@ -181,6 +181,11 @@ class OsvScanner(Scanner):
     def version(self):
         return super().version().removeprefix('osv-scanner version:').strip()
 
+    def newest(self):
+        from .. import updates
+        m = re.search(r'/releases/tag/v?([\d.]+)$', updates.location(f'{RELEASES}/latest'))
+        return m.group(1) if m else ''
+
     def install(self, uv):
         try:
             version = install_binary()

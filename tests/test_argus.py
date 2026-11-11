@@ -12,7 +12,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / 'core'))
 
-from argus import capabilities, jobs, mcp, reminder, report, reviews, scanners, targets, timing, tools, updates  # noqa: E402
+from argus import capabilities, jobs, mcp, reminder, report, reviews, scanners, server, targets, timing, tools, updates  # noqa: E402
 from argus.model import Finding, Outcome, SkillResult  # noqa: E402
 from argus.scanners import bandit, cisco, osv, secrets, semgrep, skillspector  # noqa: E402
 
@@ -857,3 +857,28 @@ class ClaudeSkills(unittest.TestCase):
             self.assertEqual([p.name for p in targets.claude_skills()], ['b', 'mine'])
         finally:
             tools.HOME = saved
+
+
+class ToolUpdates(unittest.TestCase):
+    def test_versions_compared(self):
+        from argus.scanners.base import is_newer, version_tuple
+        self.assertEqual(version_tuple('bandit 1.9.4\n  python version = 3.12'), (1, 9, 4))
+        self.assertTrue(is_newer('1.10.0', 'bandit 1.9.4'))
+        self.assertFalse(is_newer('1.9.4', '1.9.4'))
+        self.assertFalse(is_newer('', '1.0'))          # unknown: never claim a new version
+        self.assertFalse(is_newer('2.0', '?'))
+
+    def test_state_marks_outdated_tools(self):
+        s = scanners.get('bandit')
+        saved = dict(server._status), dict(server._newest)
+        try:
+            server._status['bandit'] = ('ok', 'bandit 1.8.0')
+            server._newest['bandit'] = '1.9.4'
+            info = server.tool_info(s)
+            self.assertTrue(info['outdated'])
+            self.assertEqual(info['newest'], '1.9.4')
+            server._status['bandit'] = ('broken', '')
+            self.assertFalse(server.tool_info(s)['outdated'])
+        finally:
+            server._status.clear(); server._status.update(saved[0])
+            server._newest.clear(); server._newest.update(saved[1])

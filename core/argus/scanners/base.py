@@ -1,8 +1,12 @@
 """What a scanner plug-in looks like. See docs/新增掃描工具.md for a walkthrough."""
 
+import json
+import re
+import urllib.error
+import urllib.request
 from pathlib import Path
 
-from .. import tools
+from .. import VERSION, tools
 from ..model import Outcome
 
 
@@ -36,6 +40,13 @@ class Scanner:
         text = (out or err).strip().splitlines()
         return text[0][:60] if text else '?'
 
+    def newest(self):
+        """The newest published version, for 有新版 next to the tool; '' when unknown. Asks PyPI by default."""
+        if not re.fullmatch(r'[A-Za-z0-9._-]+', self.package or ''):
+            return ''
+        data = json.loads(fetch_text(f'https://pypi.org/pypi/{self.package}/json'))
+        return str((data.get('info') or {}).get('version') or '')
+
     def preflight(self):
         """A reason this tool can't be installed on this computer, or ''."""
         return ''
@@ -61,6 +72,34 @@ class Scanner:
 
     def info(self):
         return {k: getattr(self, k) for k in ('id', 'name', 'vendor', 'license', 'homepage', 'summary', 'default_on')}
+
+
+def fetch_text(url, timeout=15):
+    """A small public page as text (a version number lookup). Falls back to the system curl on a company
+    network whose security gateway Python's certificates don't cover."""
+    req = urllib.request.Request(url, headers={'User-Agent': f'Argus/{VERSION}'})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return resp.read(2 << 20).decode('utf-8', 'replace')
+    except urllib.error.URLError as err:
+        from .. import updates
+        if not updates.is_certificate_error(err):
+            raise
+        p = updates._curl(['-fL', url], timeout)
+        if p.returncode != 0:
+            raise
+        return p.stdout
+
+
+def version_tuple(text):
+    """'bandit 1.9.4' → (1, 9, 4); () when there's no version number in it."""
+    m = re.search(r'\d+(?:\.\d+)+', text or '')
+    return tuple(int(x) for x in m.group().split('.')) if m else ()
+
+
+def is_newer(newest, installed):
+    a, b = version_tuple(newest), version_tuple(installed)
+    return bool(a and b) and a > b
 
 
 def failed(scanner_id, reason):

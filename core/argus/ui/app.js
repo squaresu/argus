@@ -63,6 +63,7 @@ function renderScanners() {
     const button = (label) => `<button class="btn" type="button" data-install="${esc(s.id)}" ${installing ? 'disabled' : ''}>${label}</button>`;
     const right = busy
       ? `<span class="installing"><span class="spinner"></span><span id="inst-text">安裝中…</span></span>`
+      : s.status === 'ok' && s.outdated ? `<span class="fix"><span class="badge new" title="現在的版本：${esc(s.version)}">有新版 ${esc(s.newest)}</span>${button('更新')}</span>`
       : s.status === 'ok' ? `<span class="badge ok" title="${esc(s.version)}">已安裝</span>`
       : s.status === 'checking' ? `<span class="badge" title="正在確認這個工具能不能正常啟動">確認中…</span>`
       : s.status === 'broken' ? `<span class="fix"><span class="badge bad">打不開</span>${button('重新安裝')}</span>`
@@ -221,7 +222,7 @@ async function loadState() {
   if (state.running && !following) follow(state.running);
   // tools still being checked: look again shortly
   clearTimeout(loadState.timer);
-  if (state.scanners.some((s) => s.status === 'checking')) loadState.timer = setTimeout(() => loadState().catch(() => {}), 3000);
+  if (state.scanners.some((s) => s.status === 'checking') || !state.newest_checked) loadState.timer = setTimeout(() => loadState().catch(() => {}), 3000);
 }
 
 // --- jobs ---

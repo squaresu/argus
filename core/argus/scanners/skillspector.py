@@ -2,11 +2,12 @@
 
 import json
 import os
+import re
 
 from .. import tools
 from ..model import (CODE_EXT, PLACEHOLDER_HOST, STYLE_EXT, Finding, Outcome, clip, is_documentation,
                      is_table_padding, is_type_definitions)
-from .base import Scanner, failed
+from .base import Scanner, failed, fetch_text
 
 # what each kind of finding means, and how to tell a real problem from the scanner being cautious
 CATEGORY = {
@@ -107,6 +108,12 @@ class SkillSpector(Scanner):
     exe = 'skillspector'
     # a zip of the source instead of git+https, so Git doesn't have to be installed
     package = 'skillspector @ https://github.com/NVIDIA/skillspector/archive/refs/heads/main.zip'
+
+    def newest(self):
+        # installed from the main branch on GitHub, so the version there is what a reinstall would bring
+        text = fetch_text('https://raw.githubusercontent.com/NVIDIA/skillspector/main/pyproject.toml')
+        m = re.search(r'^version\s*=\s*["\']([^"\']+)', text, re.M)
+        return m.group(1) if m else ''
 
     def preflight(self):
         # its yara-python has ready-made Mac builds only for macOS 14+; older Macs compile it, which needs
