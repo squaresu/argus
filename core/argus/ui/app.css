@@ -121,6 +121,9 @@ input[type=url]:focus { outline: none; border-color: var(--pick-line); }
 .update .btn:hover { background: #17203314; }
 .update .btn.primary { background: var(--navy-900); color: var(--cream); border-color: transparent; }
 .update .link, .update .installing, .update-note { color: var(--navy-900) !important; }
+.remind { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px 16px; margin: 0 0 16px; box-shadow: var(--shadow); font-size: 14px; }
+.remind-icon { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; flex: none; background: var(--pick); color: var(--pick-line); font-weight: 800; }
+.remind-msg b { display: block; } .remind-msg small { display: block; color: var(--muted); font-size: 13px; margin-top: 2px; }
 .has-update { position: relative; }
 .has-update::after { content: ""; position: absolute; top: -2px; right: -10px; width: 8px; height: 8px; border-radius: 50%; background: var(--mint); box-shadow: 0 0 6px var(--mint-bright); }
 #about-update { display: block; color: var(--link); font-size: 12.5px; }

@@ -1,0 +1,366 @@
+{
+ "results": [
+  {
+   "check_id": "home.user.Argus.core.argus.scanners.argus.run-text-as-code",
+   "path": "examples/demo.js",
+   "start": {
+    "line": 1,
+    "col": 1,
+    "offset": 0
+   },
+   "end": {
+    "line": 1,
+    "col": 11,
+    "offset": 10
+   },
+   "extra": {
+    "message": "Runs a piece of text as code",
+    "severity": "WARNING",
+    "lines": "requires login"
+   }
+  },
+  {
+   "check_id": "home.user.Argus.core.argus.scanners.argus.exec-command",
+   "path": "src/bad.js",
+   "start": {
+    "line": 5,
+    "col": 1,
+    "offset": 168
+   },
+   "end": {
+    "line": 5,
+    "col": 25,
+    "offset": 192
+   },
+   "extra": {
+    "message": "Runs a shell command built from variables",
+    "severity": "WARNING",
+    "lines": "requires login"
+   }
+  },
+  {
+   "check_id": "home.user.Argus.core.argus.scanners.argus.exec-command",
+   "path": "src/bad.js",
+   "start": {
+    "line": 7,
+    "col": 1,
+    "offset": 283
+   },
+   "end": {
+    "line": 7,
+    "col": 18,
+    "offset": 300
+   },
+   "extra": {
+    "message": "Runs a shell command built from variables",
+    "severity": "WARNING",
+    "lines": "requires login"
+   }
+  },
+  {
+   "check_id": "home.user.Argus.core.argus.scanners.argus.exec-command",
+   "path": "src/bad.js",
+   "start": {
+    "line": 8,
+    "col": 1,
+    "offset": 341
+   },
+   "end": {
+    "line": 8,
+    "col": 9,
+    "offset": 349
+   },
+   "extra": {
+    "message": "Runs a shell command built from variables",
+    "severity": "WARNING",
+    "lines": "requires login"
+   }
+  },
+  {
+   "check_id": "home.user.Argus.core.argus.scanners.argus.spawn-shell",
+   "path": "src/bad.js",
+   "start": {
+    "line": 9,
+    "col": 1,
+    "offset": 408
+   },
+   "end": {
+    "line": 9,
+    "col": 42,
+    "offset": 449
+   },
+   "extra": {
+    "message": "Starts a program through the shell",
+    "severity": "WARNING",
+    "lines": "requires login"
+   }
+  },
+  {
+   "check_id": "home.user.Argus.core.argus.scanners.argus.run-text-as-code",
+   "path": "src/bad.js",
+   "start": {
+    "line": 12,
+    "col": 1,
+    "offset": 574
+   },
+   "end": {
+    "line": 12,
+    "col": 11,
+    "offset": 584
+   },
+   "extra": {
+    "message": "Runs a piece of text as code",
+    "severity": "WARNING",
+    "lines": "requires login"
+   }
+  },
+  {
+   "check_id": "home.user.Argus.core.argus.scanners.argus.decode-and-run",
+   "path": "src/bad.js",
+   "start": {
+    "line": 14,
+    "col": 1,
+    "offset": 684
+   },
+   "end": {
+    "line": 14,
+    "col": 20,
+    "offset": 703
+   },
+   "extra": {
+    "message": "Decodes hidden text and runs it as code",
+    "severity": "ERROR",
+    "lines": "requires login"
+   }
+  },
+  {
+   "check_id": "home.user.Argus.core.argus.scanners.argus.run-text-as-code",
+   "path": "src/bad.js",
+   "start": {
+    "line": 14,
+    "col": 1,
+    "offset": 684
+   },
+   "end": {
+    "line": 14,
+    "col": 20,
+    "offset": 703
+   },
+   "extra": {
+    "message": "Runs a piece of text as code",
+    "severity": "WARNING",
+    "lines": "requires login"
+   }
+  },
+  {
+   "check_id": "home.user.Argus.core.argus.scanners.argus.decode-and-run",
+   "path": "src/bad.js",
+   "start": {
+    "line": 15,
+    "col": 1,
+    "offset": 744
+   },
+   "end": {
+    "line": 15,
+    "col": 50,
+    "offset": 793
+   },
+   "extra": {
+    "message": "Decodes hidden text and runs it as code",
+    "severity": "ERROR",
+    "lines": "requires login"
+   }
+  },
+  {
+   "check_id": "home.user.Argus.core.argus.scanners.argus.run-text-as-code",
+   "path": "src/bad.js",
+   "start": {
+    "line": 15,
+    "col": 1,
+    "offset": 744
+   },
+   "end": {
+    "line": 15,
+    "col": 50,
+    "offset": 793
+   },
+   "extra": {
+    "message": "Runs a piece of text as code",
+    "severity": "WARNING",
+    "lines": "requires login"
+   }
+  },
+  {
+   "check_id": "home.user.Argus.core.argus.scanners.argus.dump-env",
+   "path": "src/bad.js",
+   "start": {
+    "line": 16,
+    "col": 55,
+    "offset": 869
+   },
+   "end": {
+    "line": 16,
+    "col": 82,
+    "offset": 896
+   },
+   "extra": {
+    "message": "Reads every environment variable at once",
+    "severity": "WARNING",
+    "lines": "requires login"
+   }
+  },
+  {
+   "check_id": "home.user.Argus.core.argus.scanners.argus.sensitive-path",
+   "path": "src/bad.js",
+   "start": {
+    "line": 17,
+    "col": 51,
+    "offset": 963
+   },
+   "end": {
+    "line": 17,
+    "col": 57,
+    "offset": 969
+   },
+   "extra": {
+    "message": "Mentions a file that holds keys, passwords or browser data",
+    "severity": "ERROR",
+    "lines": "requires login"
+   }
+  },
+  {
+   "check_id": "home.user.Argus.core.argus.scanners.argus.sensitive-path",
+   "path": "src/bad.js",
+   "start": {
+    "line": 17,
+    "col": 59,
+    "offset": 971
+   },
+   "end": {
+    "line": 17,
+    "col": 67,
+    "offset": 979
+   },
+   "extra": {
+    "message": "Mentions a file that holds keys, passwords or browser data",
+    "severity": "ERROR",
+    "lines": "requires login"
+   }
+  },
+  {
+   "check_id": "home.user.Argus.core.argus.scanners.argus.startup-file",
+   "path": "src/bad.js",
+   "start": {
+    "line": 18,
+    "col": 34,
+    "offset": 1036
+   },
+   "end": {
+    "line": 18,
+    "col": 43,
+    "offset": 1045
+   },
+   "extra": {
+    "message": "Mentions a file that runs at log-in or controls Claude",
+    "severity": "ERROR",
+    "lines": "requires login"
+   }
+  },
+  {
+   "check_id": "home.user.Argus.core.argus.scanners.argus.throwaway-endpoint",
+   "path": "src/bad.js",
+   "start": {
+    "line": 19,
+    "col": 7,
+    "offset": 1077
+   },
+   "end": {
+    "line": 19,
+    "col": 49,
+    "offset": 1119
+   },
+   "extra": {
+    "message": "Talks to a service often used to collect stolen data",
+    "severity": "ERROR",
+    "lines": "requires login"
+   }
+  },
+  {
+   "check_id": "home.user.Argus.core.argus.scanners.argus.raw-ip",
+   "path": "src/bad.js",
+   "start": {
+    "line": 20,
+    "col": 7,
+    "offset": 1151
+   },
+   "end": {
+    "line": 20,
+    "col": 32,
+    "offset": 1176
+   },
+   "extra": {
+    "message": "Connects to a bare IP address instead of a named site",
+    "severity": "WARNING",
+    "lines": "requires login"
+   }
+  },
+  {
+   "check_id": "home.user.Argus.core.argus.scanners.argus.tls-off",
+   "path": "src/bad.js",
+   "start": {
+    "line": 22,
+    "col": 15,
+    "offset": 1279
+   },
+   "end": {
+    "line": 22,
+    "col": 55,
+    "offset": 1319
+   },
+   "extra": {
+    "message": "Turns off HTTPS certificate checks",
+    "severity": "WARNING",
+    "lines": "requires login"
+   }
+  },
+  {
+   "check_id": "home.user.Argus.core.argus.scanners.argus.run-text-as-code",
+   "path": "src/bad.js",
+   "start": {
+    "line": 23,
+    "col": 27,
+    "offset": 1359
+   },
+   "end": {
+    "line": 23,
+    "col": 50,
+    "offset": 1382
+   },
+   "extra": {
+    "message": "Runs a piece of text as code",
+    "severity": "WARNING",
+    "lines": "requires login"
+   }
+  },
+  {
+   "check_id": "home.user.Argus.core.argus.scanners.argus.exec-command",
+   "path": "src/esm.js",
+   "start": {
+    "line": 2,
+    "col": 1,
+    "offset": 43
+   },
+   "end": {
+    "line": 2,
+    "col": 20,
+    "offset": 62
+   },
+   "extra": {
+    "message": "Runs a shell command built from variables",
+    "severity": "WARNING",
+    "lines": "requires login"
+   }
+  }
+ ],
+ "errors": []
+}

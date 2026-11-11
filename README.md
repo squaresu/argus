@@ -16,7 +16,9 @@
 | [SkillSpector](https://github.com/NVIDIA/SkillSpector) | NVIDIA | Apache-2.0 | 專門檢查 AI 技能 |
 | [Cisco Skill Scanner](https://github.com/cisco-ai-defense/skill-scanner) | Cisco AI Defense | Apache-2.0 | 專門檢查 AI 技能（第二意見） |
 | [Bandit](https://github.com/PyCQA/bandit) | PyCQA | Apache-2.0 | Python 程式的危險寫法 |
+| [Semgrep](https://github.com/semgrep/semgrep) | Semgrep | LGPL-2.1 | JavaScript／TypeScript 的危險寫法（用 Argus 自己的規則） |
 | [detect-secrets](https://github.com/Yelp/detect-secrets) | Yelp | Apache-2.0 | 寫死的密碼與金鑰 |
+| [OSV-Scanner](https://github.com/google/osv-scanner) | Google | Apache-2.0 | 套件的已知漏洞和惡意套件 |
 
 ## 架構
 

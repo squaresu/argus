@@ -14,11 +14,12 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / 'core'))
 
 from argus import native, scanners, server  # noqa: E402
-from argus.scanners import bandit, cisco, secrets, skillspector  # noqa: E402
+from argus.scanners import bandit, cisco, osv, secrets, semgrep, skillspector  # noqa: E402
 
 FIX = Path(__file__).parent / 'fixtures'
-PARSERS = {'skillspector': skillspector.parse, 'cisco': cisco.parse, 'bandit': bandit.parse, 'secrets': secrets.parse}
-INSTALLED = {'skillspector', 'cisco', 'bandit'}   # leave one "not installed" to show the install button
+PARSERS = {'skillspector': skillspector.parse, 'cisco': cisco.parse, 'bandit': bandit.parse, 'secrets': secrets.parse,
+           'semgrep': semgrep.parse, 'osv': lambda d: osv.parse(d, '/SKILL')}
+INSTALLED = {'skillspector', 'cisco', 'bandit', 'semgrep'}   # leave one "not installed" to show the install button
 
 
 def stand_in(real):
@@ -32,9 +33,10 @@ def stand_in(real):
         def applies_to(self, skill_dir):
             return True
 
-        def install_command(self, uv):
+        def install(self, uv):
+            time.sleep(2)
             INSTALLED.add(self.id)
-            return [sys.executable, '-c', 'import time; time.sleep(2)']
+            return 0, '', ''
 
         def scan(self, skill_dir, work):
             time.sleep(0.6)

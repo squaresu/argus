@@ -4,6 +4,7 @@ import json
 import os
 import sys
 import tempfile
+import time
 import unittest
 import zipfile
 from pathlib import Path
@@ -11,9 +12,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / 'core'))
 
-from argus import capabilities, jobs, mcp, report, reviews, scanners, targets, tools, updates  # noqa: E402
+from argus import capabilities, jobs, mcp, reminder, report, reviews, scanners, targets, timing, tools, updates  # noqa: E402
 from argus.model import Finding, Outcome, SkillResult  # noqa: E402
-from argus.scanners import bandit, cisco, secrets, skillspector  # noqa: E402
+from argus.scanners import bandit, cisco, osv, secrets, semgrep, skillspector  # noqa: E402
 
 FIX = Path(__file__).parent / 'fixtures'
 
@@ -24,12 +25,81 @@ def fixture(name):
 
 class Registry(unittest.TestCase):
     def test_all_scanners_found_in_order(self):
-        self.assertEqual([s.id for s in scanners.all_scanners()], ['skillspector', 'cisco', 'bandit', 'secrets'])
+        self.assertEqual([s.id for s in scanners.all_scanners()], ['skillspector', 'cisco', 'bandit', 'semgrep', 'secrets', 'osv'])
 
     def test_every_scanner_describes_itself(self):
         for s in scanners.all_scanners():
-            for field in ('name', 'vendor', 'license', 'homepage', 'summary', 'exe', 'package'):
+            for field in ('name', 'vendor', 'license', 'homepage', 'summary', 'exe') + (('package',) if s.needs_uv else ()):
                 self.assertTrue(getattr(s, field), f'{s.id}.{field}')
+
+
+class SemgrepParse(unittest.TestCase):
+    """Real output of Argus's rules on sample code (tests/fixtures/semgrep.json)."""
+
+    def setUp(self):
+        self.o = semgrep.parse(fixture('semgrep.json'))
+
+    def rules_at(self, path, line):
+        return sorted(f.rule for f in self.o.findings if f.file == path and f.line == line)
+
+    def test_findings(self):
+        self.assertEqual(self.rules_at('src/bad.js', 5), ['exec-command'])        # cp.exec(`rm -rf ${dir}`)
+        self.assertEqual(self.rules_at('src/bad.js', 6), [])                      # exec('ls -la'): a fixed command
+        self.assertEqual(self.rules_at('src/bad.js', 11), [])                     # a regular expression's .exec
+        self.assertEqual(self.rules_at('src/bad.js', 14), ['decode-and-run'])     # not also run-text-as-code
+        self.assertEqual(self.rules_at('src/bad.js', 17), ['sensitive-path'])     # once, though two strings match
+        self.assertEqual(self.rules_at('src/bad.js', 21), [])                     # a private address
+        self.assertEqual(self.rules_at('src/esm.js', 2), ['exec-command'])
+        self.assertEqual(self.rules_at('src/esm.js', 3), [])
+
+    def test_verdict_and_calm(self):
+        self.assertEqual(self.o.verdict, 'DO_NOT_INSTALL')
+        demo = [f for f in self.o.findings if f.file == 'examples/demo.js']
+        self.assertTrue(demo and all(f.calm for f in demo))
+        only_code = semgrep.parse({'results': [r for r in fixture('semgrep.json')['results']
+                                               if r['check_id'].endswith(('run-text-as-code', 'tls-off'))]})
+        self.assertEqual(only_code.verdict, 'CAUTION')
+
+
+class OsvParse(unittest.TestCase):
+    """Real OSV-Scanner output (run offline against a made-up database) in tests/fixtures/osv.json."""
+
+    def test_findings(self):
+        o = osv.parse(fixture('osv.json'), '/SKILL')
+        by_file = {f.file: f for f in o.findings}
+        self.assertEqual(sorted(by_file), ['package-lock.json', 'requirements.txt'])
+        lodash = by_file['package-lock.json']
+        self.assertEqual(lodash.severity, 'HIGH')                                 # CVSS 7.4
+        self.assertIn('CVE-2020-8203', lodash.what)
+        self.assertIn('4.17.19', lodash.what)                                      # the fixed version
+        self.assertEqual(by_file['requirements.txt'].severity, 'MEDIUM')          # no score given
+        self.assertEqual(o.verdict, 'CAUTION')
+
+    def test_malicious_package(self):
+        data = fixture('osv.json')
+        g = data['results'][0]['packages'][0]['groups'][0]
+        g['ids'] = ['MAL-2025-1234']
+        o = osv.parse(data, '/SKILL')
+        self.assertEqual(o.verdict, 'DO_NOT_INSTALL')
+        self.assertEqual(o.findings[0].severity, 'CRITICAL')
+
+    def test_which_skills_it_looks_at(self):
+        d = Path(tempfile.mkdtemp())
+        self.assertFalse(osv.SCANNER.applies_to(d))
+        (d / 'package.json').write_text('{}')                                     # names no exact versions
+        self.assertFalse(osv.SCANNER.applies_to(d))
+        (d / 'requirements-dev.txt').write_text('x==1')
+        self.assertTrue(osv.SCANNER.applies_to(d))
+
+    def test_download_name(self):
+        saved = tools.IS_WIN, tools.IS_MAC
+        try:
+            tools.IS_WIN, tools.IS_MAC = True, False
+            self.assertRegex(osv.asset_name(), r'^osv-scanner_windows_(amd64|arm64)\.exe$')
+            tools.IS_WIN, tools.IS_MAC = False, True
+            self.assertRegex(osv.asset_name(), r'^osv-scanner_darwin_(amd64|arm64)$')
+        finally:
+            tools.IS_WIN, tools.IS_MAC = saved
 
 
 class SkillSpectorParse(unittest.TestCase):
@@ -684,3 +754,106 @@ class UpdateCheckOverWeb(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class Conclusion(unittest.TestCase):
+    """一句話結論 at the top of a report."""
+
+    def result(self, verdict, findings=(), scanner='skillspector'):
+        return SkillResult('x', '/x', [Outcome(scanner, verdict, list(findings))])
+
+    def test_advice(self):
+        high = Finding(scanner='skillspector', title='t', severity='HIGH')
+        calm = Finding(scanner='skillspector', title='t', severity='HIGH', calm='示範用')
+        medium = Finding(scanner='skillspector', title='t', severity='MEDIUM')
+        self.assertEqual(report.advice(self.result('SAFE'))[0], 'ok')
+        self.assertEqual(report.advice(self.result('DO_NOT_INSTALL', [high]))[0], 'no')
+        self.assertEqual(report.advice(self.result('DO_NOT_INSTALL', [medium]))[0], 'ask')
+        self.assertEqual(report.advice(self.result('CAUTION', [calm]))[0], 'ok')   # only 多半不用擔心 left
+        self.assertEqual(report.advice(self.result('ERROR'))[0], 'ask')
+        self.assertEqual(report.advice_word('ok', installed=True), '可以繼續用')
+        self.assertEqual(report.advice_word('no', installed=False), '不建議裝')
+
+    def test_report_leads_with_it(self):
+        bad = SkillResult('bad-skill', '/b', [Outcome('skillspector', 'DO_NOT_INSTALL',
+                                                      [Finding(scanner='skillspector', title='t', severity='CRITICAL')])])
+        page = report.render('t', [self.result('SAFE'), bad], scanners.all_scanners()[:1], {}, installed=True)
+        self.assertIn('1 個技能不建議用', page)
+        self.assertIn('href="#skill-0">bad-skill</a>', page)                    # the worst comes first, linked
+        self.assertLess(page.index('verdict-box'), page.index('class="skill'))
+        self.assertIn('Argus 依規則的初步結論：不建議用', report.claude_text(bad, installed=True))
+
+
+class Timing(unittest.TestCase):
+    def setUp(self):
+        self.saved = timing._path
+        d = Path(tempfile.mkdtemp())
+        timing._path = lambda: d / 'timings.json'
+
+    def tearDown(self):
+        timing._path = self.saved
+
+    def test_learns_and_estimates(self):
+        self.assertEqual(timing.estimate([]), 0)
+        guess = timing.estimate(['bandit'] * 6)                                     # 6 runs of 5 s, 3 at a time
+        self.assertEqual(guess, round(30 / 3 + timing.OVERHEAD))
+        timing.record('bandit', 50)
+        timing.record('bandit', 50)
+        self.assertEqual(timing.per_run('bandit'), 50)
+        self.assertGreater(timing.estimate(['bandit'] * 6), guess)
+        self.assertEqual(timing.words(30), '不到 1 分鐘')
+        self.assertEqual(timing.words(300), '大約 5 分鐘')
+
+    def test_job_time_left(self):
+        job = jobs.Job('scan', 't')
+        job.total, job.estimate = 10, 120
+        self.assertGreater(job.to_dict()['remaining'], 100)                         # nothing done yet: the estimate
+        job.started -= 40
+        job.done = 5                                                                # half done in 40 s
+        self.assertAlmostEqual(job.remaining(), 40 + timing.OVERHEAD, delta=2)
+
+
+class Reminder(unittest.TestCase):
+    def test_new_changed_and_stale(self):
+        root = Path(tempfile.mkdtemp())
+        skills = []
+        for name in ('same', 'edited', 'old', 'fresh'):
+            d = root / name
+            d.mkdir()
+            (d / 'SKILL.md').write_text(f'---\nname: {name}\n---\n')
+            skills.append(d)
+        store = reviews.Store(root / 'reviews.json')
+        now = time.time()
+        recent = time.strftime('%Y/%m/%d %H:%M', time.localtime(now - 86400))
+        long_ago = time.strftime('%Y/%m/%d %H:%M', time.localtime(now - 45 * 86400))
+        for d, at in ((skills[0], recent), (skills[1], recent), (skills[2], long_ago)):
+            snap = reviews.snapshot(d, [])
+            snap['at'] = at
+            store.remember_scan('path:' + str(d.resolve()), d.name, snap)
+        (skills[1] / 'run.sh').write_text('echo hi')                                  # changed since its scan
+        r = reminder.compute(now=now, store=store, skills=skills)
+        self.assertTrue(r['show'])
+        self.assertEqual((r['changed'], r['new'], r['stale_count']), (['edited'], ['fresh'], 1))
+        self.assertFalse(r['never'])
+        quiet = reminder.compute(now=now, store=store, skills=[skills[0]])
+        self.assertFalse(quiet['show'])
+        self.assertTrue(reminder.compute(now=now, store=reviews.Store(root / 'none.json'), skills=skills)['never'])
+
+
+class ClaudeSkills(unittest.TestCase):
+    def test_only_installed_plugins(self):
+        home = Path(tempfile.mkdtemp())
+        own = home / '.claude' / 'skills' / 'mine'
+        catalog = home / '.claude' / 'plugins' / 'marketplaces' / 'm' / 'plugins' / 'offered' / 'skills' / 'a'
+        installed = home / '.claude' / 'plugins' / 'cache' / 'm' / 'used' / '1.0' / 'skills' / 'b'
+        for d in (own, catalog, installed):
+            d.mkdir(parents=True)
+            (d / 'SKILL.md').write_text('x')
+        (home / '.claude' / 'plugins' / 'installed_plugins.json').write_text(json.dumps(
+            {'version': 2, 'plugins': {'used@m': [{'installPath': str(installed.parent.parent)}]}}))
+        saved = tools.HOME
+        try:
+            tools.HOME = home
+            self.assertEqual([p.name for p in targets.claude_skills()], ['b', 'mine'])
+        finally:
+            tools.HOME = saved

@@ -11,7 +11,7 @@ import re
 from pathlib import Path
 from types import SimpleNamespace
 
-from . import tools
+from . import targets, tools
 from .model import Finding, Outcome, SkillResult
 
 SCANNER = 'argus-mcp'
@@ -69,36 +69,6 @@ def claude_desktop_dir():
     return tools.HOME / '.config' / 'Claude'
 
 
-def installed_plugins(home: Path):
-    """→ [(plugin name, its folder)] for the Claude Code plugins that are installed and not turned off.
-
-    ~/.claude/plugins also holds each marketplace's whole catalog; those plugins are only on offer, so they're skipped.
-    """
-    root = home / '.claude' / 'plugins'
-    record = _load(root / 'installed_plugins.json') or {}
-    enabled = (_load(home / '.claude' / 'settings.json') or {}).get('enabledPlugins') or {}
-    found = []
-    for ident, entries in (record.get('plugins') or {}).items():
-        if enabled.get(ident) is False:                    # installed but turned off: Claude Code doesn't start it
-            continue
-        for entry in entries if isinstance(entries, list) else [entries]:
-            folder = (entry or {}).get('installPath') if isinstance(entry, dict) else None
-            if folder and Path(folder).is_dir():
-                found.append((ident.split('@')[0], Path(folder)))
-    known = any(isinstance(e, dict) and e.get('installPath') for v in (record.get('plugins') or {}).values()
-                for e in (v if isinstance(v, list) else [v]))
-    if not known and (root / 'cache').is_dir():           # no usable record: what's been downloaded to run
-        for f in sorted((root / 'cache').rglob('plugin.json'))[:200]:
-            folder = f.parent.parent if f.parent.name == '.claude-plugin' else f.parent
-            found.append(((_load(f) or {}).get('name') or folder.name, folder))
-    seen, unique = set(), []
-    for name, folder in found:
-        if folder not in seen:
-            seen.add(folder)
-            unique.append((name, folder))
-    return unique
-
-
 def discover(home: Path | None = None, desktop: Path | None = None):
     """→ list of (server name, where it's set up, config dict). Reads files only."""
     home = home or tools.HOME
@@ -129,7 +99,7 @@ def discover(home: Path | None = None, desktop: Path | None = None):
             cfg = ((m.get('server') or {}).get('mcp_config')) or {}
             if cfg:
                 found.append((m.get('display_name') or m.get('name') or manifest.parent.name, 'Claude 桌面版擴充功能', cfg))
-    for name, folder in installed_plugins(home):
+    for name, folder in targets.installed_plugins(home):
         add(_load(folder / '.mcp.json'), f'Claude Code 外掛：{name}')
         m = _load(folder / '.claude-plugin' / 'plugin.json') or _load(folder / 'plugin.json') or {}
         servers = m.get('mcpServers')

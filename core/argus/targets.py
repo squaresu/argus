@@ -1,5 +1,6 @@
 """Turn what the person picked (their Claude skills, a folder, a zip, a GitHub link) into skill folders to scan."""
 
+import json
 import re
 import shutil
 import urllib.parse
@@ -20,7 +21,51 @@ class TargetError(Exception):
 
 
 def claude_roots():
-    return [tools.HOME / '.claude' / 'skills', tools.HOME / '.claude' / 'plugins']
+    """Where this computer's Claude skills live: ~/.claude/skills and each installed, switched-on plugin.
+    (~/.claude/plugins also holds every marketplace's whole catalog; those plugins are only on offer.)"""
+    return [tools.HOME / '.claude' / 'skills'] + [folder for _, folder in installed_plugins()]
+
+
+def claude_skills():
+    return sorted({s for r in claude_roots() if r.exists() for s in find_skills(r)})
+
+
+def _load_json(path: Path):
+    try:
+        return json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return None
+
+
+def installed_plugins(home: Path | None = None):
+    """→ [(plugin name, its folder)] for the Claude Code plugins that are installed and not turned off.
+
+    ~/.claude/plugins also holds each marketplace's whole catalog; those plugins are only on offer, so they're skipped.
+    """
+    home = home or tools.HOME
+    root = home / '.claude' / 'plugins'
+    record = _load_json(root / 'installed_plugins.json') or {}
+    enabled = (_load_json(home / '.claude' / 'settings.json') or {}).get('enabledPlugins') or {}
+    found = []
+    for ident, entries in (record.get('plugins') or {}).items():
+        if enabled.get(ident) is False:                    # installed but turned off: Claude Code doesn't start it
+            continue
+        for entry in entries if isinstance(entries, list) else [entries]:
+            folder = (entry or {}).get('installPath') if isinstance(entry, dict) else None
+            if folder and Path(folder).is_dir():
+                found.append((ident.split('@')[0], Path(folder)))
+    known = any(isinstance(e, dict) and e.get('installPath') for v in (record.get('plugins') or {}).values()
+                for e in (v if isinstance(v, list) else [v]))
+    if not known and (root / 'cache').is_dir():           # no usable record: what's been downloaded to run
+        for f in sorted((root / 'cache').rglob('plugin.json'))[:200]:
+            folder = f.parent.parent if f.parent.name == '.claude-plugin' else f.parent
+            found.append(((_load_json(f) or {}).get('name') or folder.name, folder))
+    seen, unique = set(), []
+    for name, folder in found:
+        if folder not in seen:
+            seen.add(folder)
+            unique.append((name, folder))
+    return unique
 
 
 def find_skills(root: Path, max_depth=6):
@@ -113,7 +158,7 @@ def github(url, work: Path):
 def resolve(kind, value, work: Path):
     """→ (title for the report, list of skill folders)."""
     if kind == 'claude':
-        skills = sorted({s for r in claude_roots() if r.exists() for s in find_skills(r)})
+        skills = claude_skills()
         if not skills:
             raise TargetError(f'在 {tools.HOME / ".claude"} 裡找不到任何技能（SKILL.md）。')
         return '我所有的 Claude 技能', skills

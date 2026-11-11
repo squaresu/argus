@@ -44,6 +44,12 @@ class Scanner:
         return [uv, 'tool', 'install', '--force', '--reinstall', '--compile-bytecode', '--python', tools.python_spec(),
                 self.package]
 
+    needs_uv = True      # False for a tool that installs itself some other way (override install)
+
+    def install(self, uv):
+        """Install (or reinstall) the tool. → (exit code, output, error output), like tools.run."""
+        return tools.run(self.install_command(uv), timeout=1200)
+
     # --- the actual work ---
     def applies_to(self, skill_dir: Path):
         """False when there's nothing for this tool to look at (e.g. no Python files for a Python checker)."""

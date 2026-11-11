@@ -9,10 +9,10 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 
-from . import capabilities, mcp, report, reviews, scanners, targets, tools, updates
+from . import capabilities, mcp, reminder, report, reviews, scanners, targets, timing, tools, updates
 from .model import Outcome, SkillResult
 
-PARALLEL = 3   # scanner runs at a time; each is its own process
+PARALLEL = timing.PARALLEL   # scanner runs at a time; each is its own process
 
 _jobs = {}
 _lock = threading.Lock()
@@ -32,15 +32,26 @@ class Job:
         self.result = None           # a scan: the report's file name
         self.target = ''             # an install: the scanner id
         self.started = time.time()
+        self.estimate = 0            # a scan: seconds the whole thing should take, once its size is known
 
     def say(self, text):
         self.current = text
         self.log.append(f'{datetime.now():%H:%M:%S}  {text}')
         del self.log[:-200]
 
+    def remaining(self):
+        """Rough seconds left: from the up-front estimate until a few runs are done, then from the pace so far."""
+        elapsed = time.time() - self.started
+        if self.status != 'running' or not self.total:
+            return None
+        if self.done >= max(3, self.total // 5):
+            return round(elapsed / self.done * (self.total - self.done)) + timing.OVERHEAD
+        return max(round(self.estimate - elapsed), 10) if self.estimate else None
+
     def to_dict(self):
         return {k: getattr(self, k) for k in ('id', 'kind', 'label', 'status', 'done', 'total', 'current',
-                                              'log', 'error', 'result', 'target')}
+                                              'log', 'error', 'result', 'target')} | {
+            'elapsed': round(time.time() - self.started), 'remaining': self.remaining()}
 
 
 def start(job, work):
@@ -117,7 +128,9 @@ def scan(kind, value, scanner_ids):
                                    capabilities=capabilities.analyze(f)) for f in folders]
             pairs = [(r, f, s) for r, f in zip(results, folders) for s in chosen]
             job.total = len(pairs)
-            job.say(f'找到 {len(folders)} 個技能，用 {len(chosen)} 個工具檢查…')
+            job.estimate = time.time() - job.started + timing.estimate(
+                [s.id for _, f, s in pairs if s.applies_to(f)])
+            job.say(f'找到 {len(folders)} 個技能，用 {len(chosen)} 個工具檢查，預估{timing.words(job.estimate)}…')
             versions = {s.id: s.version() or '?' for s in chosen}
 
             def one(pair):
@@ -126,10 +139,13 @@ def scan(kind, value, scanner_ids):
                     outcome = Outcome(scanner.id, 'SKIPPED', note=f'{scanner.name}：沒有它要檢查的檔案。')
                 else:
                     with tempfile.TemporaryDirectory(prefix='argus-') as w:
+                        began = time.time()
                         try:
                             outcome = scanner.scan(folder, Path(w))
                         except Exception as err:   # a plug-in bug shouldn't sink the whole scan
                             outcome = Outcome(scanner.id, 'ERROR', error=f'{type(err).__name__}: {err}')
+                        if outcome.verdict != 'ERROR':
+                            timing.record(scanner.id, time.time() - began)
                 for f in outcome.findings:   # show paths relative to the skill, as the person sees it
                     if f.file.startswith(str(folder)):
                         f.file = f.file[len(str(folder)):].lstrip('/\\')
@@ -146,11 +162,27 @@ def scan(kind, value, scanner_ids):
             job.say('正在跟上次的結果比對…')
             snapshots = track(results, folders)
             job.say('正在產生報告…')
-            job.result = report.save(title, results, chosen, versions, snapshots)
+            job.result = report.save(title, results, chosen, versions, snapshots, installed=kind == 'claude')
+            if kind in ('claude', 'folder'):   # what was just scanned no longer needs a reminder
+                reminder.recheck()
         finally:
             targets.cleanup(tmp)
 
     return start(Job('scan', '掃描'), work)
+
+
+def estimate(kind, value, scanner_ids):
+    """Before a scan: how many skills and roughly how long. Downloads aren't counted until they're fetched."""
+    chosen = [s for s in scanners.all_scanners() if s.id in scanner_ids and s.installed()]
+    if kind == 'claude':
+        folders = targets.claude_skills()
+    elif kind == 'folder' and value and Path(value).is_dir():
+        folders = targets.expand(Path(value))
+    else:
+        return {'skills': None, 'per_skill': timing.estimate([s.id for s in chosen]) if chosen else 0}
+    folders = folders[:500]
+    runs = [s.id for f in folders for s in chosen if s.applies_to(f)]
+    return {'skills': len(folders), 'seconds': timing.estimate(runs)}
 
 
 def scan_mcp():
@@ -163,7 +195,7 @@ def scan_mcp():
         job.total = job.done = len(results)
         job.say(f'找到 {len(results)} 個 MCP 伺服器，正在比對…')
         snapshots = track(results, [None] * len(results))
-        job.result = report.save('我的 MCP 伺服器', results, [mcp.TOOL], {mcp.SCANNER: '內建'}, snapshots)
+        job.result = report.save('我的 MCP 伺服器', results, [mcp.TOOL], {mcp.SCANNER: '內建'}, snapshots, installed=True)
 
     return start(Job('scan', '掃描 MCP 伺服器'), work)
 
@@ -193,12 +225,12 @@ def install(scanner_id, on_checked=None):
 
     def work(job):
         uv = tools.find_exe('uv')
-        if not uv:
+        if not uv and scanner.needs_uv:
             raise targets.TargetError('找不到 uv（安裝工具用的程式）。請關掉 Argus 再重新打開，它會自動安裝 uv。')
         job.total = 2
         job.say(f'正在安裝 {scanner.name}，大約 1–3 分鐘…')
         log = tools.state_dir() / 'install.log'
-        code, out, err = tools.run(scanner.install_command(uv), timeout=1200)
+        code, out, err = scanner.install(uv)
         with log.open('a', encoding='utf-8') as fh:
             fh.write(f'\n=== {datetime.now():%Y-%m-%d %H:%M} {scanner.name} (exit {code})\n{out}\n{err}\n')
         job.done = 1

@@ -16,8 +16,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
-from . import (COPYRIGHT, DISCLAIMER, DISCLAIMER_SHORT, LICENSE, NAME, TAGLINE, VERSION, jobs, native, scanners,
-               targets, tools, updates)
+from . import (COPYRIGHT, DISCLAIMER, DISCLAIMER_SHORT, LICENSE, NAME, TAGLINE, VERSION, jobs, native, reminder,
+               scanners, targets, tools, updates)
 
 UI = Path(__file__).parent / 'ui'
 MOVED_PAGE = ('<!doctype html><meta charset="utf-8"><title>Argus</title>'
@@ -67,6 +67,7 @@ def state():
         'installing': next(({'id': j.target, 'job': j.id} for j in running if j.kind == 'install'), None),
         'claude_found': any(r.exists() for r in targets.claude_roots()),
         'update': updates.status(),
+        'reminder': reminder.status(),
     }
 
 
@@ -157,6 +158,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send(409, {'error': '已經有工作在進行，請等它完成。'})
                 job = jobs.scan(data.get('kind'), data.get('value'), data.get('scanners') or [])
                 return self.send(200, job.to_dict())
+            if path == '/api/estimate':   # before a scan: how many skills, roughly how long
+                return self.send(200, jobs.estimate(data.get('kind'), data.get('value'), data.get('scanners') or []))
             if path == '/api/install':
                 if jobs.busy():
                     return self.send(409, {'error': '已經有工作在進行，請等它完成。'})
@@ -212,6 +215,7 @@ def main(argv=None):
     url = f'http://127.0.0.1:{server.server_address[1]}/?t={TOKEN}'
     threading.Thread(target=check_tools, daemon=True).start()
     threading.Thread(target=updates.check, daemon=True).start()
+    reminder.recheck()
     if '--no-idle-exit' not in argv:
         threading.Thread(target=watchdog, args=(server,), daemon=True).start()
     url_file = tools.state_dir() / 'url'

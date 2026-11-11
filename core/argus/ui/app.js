@@ -4,6 +4,8 @@ const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const VERDICT_CLASS = { SAFE: 'safe', CAUTION: 'caution', DO_NOT_INSTALL: 'danger', ERROR: 'error' };
 const VERDICT_ZH = { SAFE: '安全', CAUTION: '注意', DO_NOT_INSTALL: '不建議安裝', ERROR: '沒掃完' };
+const ADVICE_CLASS = { ok: 'safe', ask: 'caution', no: 'danger' };
+const adviceWord = (a, installed) => (a === 'ask' ? '先問人' : installed ? { ok: '可以繼續用', no: '不建議用' }[a] : { ok: '可以裝', no: '不建議裝' }[a]);
 
 let state = null;
 let picked = { folder: '', zip: '' };
@@ -95,6 +97,28 @@ function renderUpdate() {
 
 let updating = null;
 
+// 「該重新檢查了」: a skill changed or arrived since its last scan, or hasn't been scanned for a month
+function renderReminder() {
+  const r = state.reminder || {};
+  let dismissed = '';
+  try { dismissed = localStorage.getItem('argus-remind-dismissed') || ''; } catch {}
+  const [sig, until] = dismissed.split('|');
+  const snoozed = sig === r.signature && Date.now() < +until;
+  $('#remind').hidden = !r.checked || !r.show || snoozed || !!state.running;
+  if ($('#remind').hidden) {
+    clearTimeout(renderReminder.timer);
+    if (!r.checked) renderReminder.timer = setTimeout(() => loadState().catch(() => {}), 2000);
+    return;
+  }
+  const names = (list, count) => list.join('、') + (count > list.length ? ` 等 ${count} 個` : '');
+  const parts = [];
+  if (r.changed_count) parts.push(`${r.changed_count} 個在上次檢查後有更新（${names(r.changed, r.changed_count)}）`);
+  if (r.new_count && !r.never) parts.push(`${r.new_count} 個是新裝的（${names(r.new, r.new_count)}）`);
+  if (r.stale_count) parts.push(`${r.stale_count} 個超過 30 天沒檢查`);
+  $('#remind-title').textContent = r.never ? `還沒檢查過這台電腦上的 Claude 技能（共 ${r.total} 個）` : '你的 Claude 技能該重新檢查了';
+  $('#remind-text').textContent = r.never ? '檢查一次，之後技能有更新時 Argus 會提醒你。' : `其中 ${parts.join('，')}。`;
+}
+
 async function startUpdate() {
   if (!confirm(`要更新到 Argus ${state.update.latest} 嗎？\n\nArgus 會下載新版、換掉現在這一版，再自動重新打開。正在進行的工作會被中斷。`)) return;
   try { watchUpdate((await api('/api/update', {})).id); } catch (err) { toast(err.message, 8000); }
@@ -131,10 +155,30 @@ function renderHistory() {
   const h = state.history || [];
   $('#history-card').hidden = !h.length;
   $('#history').innerHTML = h.slice(0, 8).map((r) => {
-    const dots = ['DO_NOT_INSTALL', 'CAUTION', 'SAFE', 'ERROR']
-      .filter((v) => r.counts?.[v]).map((v) => `<span class="dot ${VERDICT_CLASS[v]}" title="${VERDICT_ZH[v]}">${r.counts[v]}</span>`).join('');
+    const dots = r.advice
+      ? ['no', 'ask', 'ok'].filter((a) => r.advice[a]).map((a) => `<span class="dot ${ADVICE_CLASS[a]}" title="${adviceWord(a, r.installed)}">${r.advice[a]}</span>`).join('')
+      : ['DO_NOT_INSTALL', 'CAUTION', 'SAFE', 'ERROR']
+        .filter((v) => r.counts?.[v]).map((v) => `<span class="dot ${VERDICT_CLASS[v]}" title="${VERDICT_ZH[v]}">${r.counts[v]}</span>`).join('');
     return `<li data-file="${esc(r.file)}"><span class="h-title">${esc(r.title)}</span><span class="dots">${dots}</span><span class="h-when">${esc(r.when)} · ${r.skills} 個技能</span></li>`;
   }).join('');
+}
+
+// before a scan: how many skills and roughly how long (asked again when the target or the tools change)
+const minutes = (s) => (s < 60 ? '不到 1 分鐘' : s < 3600 ? `大約 ${Math.round(s / 60)} 分鐘` : `大約 ${(s / 3600).toFixed(1)} 小時`);
+async function renderEstimate() {
+  const k = kind();
+  const el = $('#start-estimate');
+  const tools = state ? state.scanners.filter((s) => s.installed && checked?.has(s.id)).map((s) => s.id) : [];
+  if (!state || k === 'mcp' || !tools.length || ((k === 'folder' || k === 'zip') && !picked[k])) { el.textContent = ''; return; }
+  const ask = `${k}|${picked[k] || ''}|${tools.join(',')}`;
+  renderEstimate.ask = ask;
+  try {
+    const e = await api('/api/estimate', { kind: k, value: picked[k] || '', scanners: tools });
+    if (renderEstimate.ask !== ask) return;   // the choice changed while asking
+    el.textContent = e.skills === null
+      ? `下載後才知道有幾個技能；每個技能${minutes(e.per_skill)}。`
+      : e.skills ? `共 ${e.skills} 個技能，預估${minutes(e.seconds)}。` : '';
+  } catch { el.textContent = ''; }
 }
 
 function validate() {
@@ -151,6 +195,8 @@ function validate() {
   if (state?.running) hint = '有工作正在進行…';
   $('#start-hint').textContent = hint;
   $('#start').disabled = !!state?.running || (k !== 'mcp' && !tools.length) || /^請|^先/.test(hint);
+  clearTimeout(validate.timer);
+  validate.timer = setTimeout(renderEstimate, 300);
 }
 
 async function loadState() {
@@ -167,6 +213,7 @@ async function loadState() {
   $('#licences').innerHTML = state.scanners.map((s) =>
     `<li><a href="${esc(s.homepage)}" target="_blank" rel="noopener">${esc(s.name)}</a>（${esc(s.vendor)}）— ${esc(s.license)}</li>`).join('');
   renderUpdate();
+  renderReminder();
   // an install that was going on when the page was (re)loaded: keep showing it next to its tool
   if (state.installing && !installing) watchInstall(state.installing.id, state.installing.job);
   renderScanners();
@@ -194,7 +241,10 @@ async function follow(jobId) {
     if (job.status === 'running' && !job.total) $('#p-bar').style.width = '4%';
     $('#p-current').textContent = job.status === 'error' ? job.error : job.current;
     $('#p-bar').style.width = job.total ? `${Math.round((job.done / job.total) * 100)}%` : '4%';
-    $('#p-count').textContent = job.total ? `${job.done} / ${job.total}` : '';
+    const clock = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+    const left = job.remaining == null ? '' : job.remaining < 60 ? ' · 快好了' : ` · 預估還要${minutes(job.remaining).replace('大約', '約')}`;
+    $('#p-count').textContent = job.status === 'running'
+      ? `${job.total ? `${job.done} / ${job.total} · ` : ''}已經過 ${clock(job.elapsed)}${left}` : (job.total ? `${job.done} / ${job.total}` : '');
     $('#p-log').textContent = job.log.join('\n');
     if (job.status !== 'running') {
       following = null;
@@ -289,6 +339,17 @@ $('#check-update').addEventListener('click', async () => {
     if (state.update.newer) { $('#about').close(); window.scrollTo(0, 0); }
   } catch (err) { $('#about-update').textContent = err.message; }
   $('#check-update').disabled = false;
+});
+$('#remind-now').addEventListener('click', () => {
+  document.querySelector('input[name=kind][value=claude]').checked = true;
+  renderTarget();
+  $('#remind').hidden = true;
+  $('#start').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  $('#start').focus();
+});
+$('#remind-later').addEventListener('click', () => {
+  try { localStorage.setItem('argus-remind-dismissed', `${state.reminder.signature}|${Date.now() + 7 * 864e5}`); } catch {}
+  $('#remind').hidden = true;
 });
 $('#update-later').addEventListener('click', () => {
   try { localStorage.setItem('argus-update-dismissed', state.update.latest); } catch {}

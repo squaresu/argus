@@ -1,0 +1,131 @@
+# Argus's own Semgrep rules for JavaScript / TypeScript in AI skills (MIT, like the rest of Argus).
+# They look for what matters in a skill: running commands, running text as code, reaching for secrets or
+# start-up files, sending things to throwaway endpoints, and turning off HTTPS checks.
+# Each rule's id is looked up in semgrep.py for its Chinese title and explanation.
+rules:
+  - id: argus.decode-and-run
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: Decodes hidden text and runs it as code
+    pattern-either:
+      - pattern: eval(atob(...))
+      - pattern: eval(Buffer.from(...).toString(...))
+      - pattern: new Function(atob(...))
+      - pattern: new Function(Buffer.from(...).toString(...))
+      - pattern: eval(decodeURIComponent(...))
+      - pattern: eval(unescape(...))
+
+  - id: argus.run-text-as-code
+    languages: [javascript, typescript]
+    severity: WARNING
+    message: Runs a piece of text as code
+    patterns:
+      - pattern-either:
+          - pattern: eval($X)
+          - pattern: new Function(..., $X)
+          - patterns:
+              - pattern: $VM.$FN($X, ...)
+              - metavariable-regex:
+                  metavariable: $FN
+                  regex: ^(runInNewContext|runInThisContext|runInContext|compileFunction)$
+      - pattern-not: eval("...")
+      - pattern-not: new Function(..., "...")
+
+  - id: argus.exec-command
+    languages: [javascript, typescript]
+    severity: WARNING
+    message: Runs a shell command built from variables
+    # exec / execSync go through the shell; a fixed command in quotes is fine, one pieced together from
+    # variables is what can be abused. Matched by name (RegExp's .exec is a method on a pattern, not these).
+    patterns:
+      - pattern-either:
+          - patterns:
+              - pattern: $FN($CMD, ...)
+              - metavariable-regex:
+                  metavariable: $FN
+                  regex: ^(exec|execSync|execAsync|execPromise)$
+          - pattern: $CP.execSync($CMD, ...)
+          - patterns:
+              - pattern-either:
+                  - pattern-inside: |
+                      $CP = require("=~/^(node:)?child_process$/");
+                      ...
+                  - pattern-inside: |
+                      import * as $CP from "=~/^(node:)?child_process$/";
+                      ...
+                  - pattern-inside: |
+                      import $CP from "=~/^(node:)?child_process$/";
+                      ...
+              - pattern: $CP.exec($CMD, ...)
+      - metavariable-pattern:
+          metavariable: $CMD
+          patterns:
+            - pattern-not: '"..."'
+
+  - id: argus.spawn-shell
+    languages: [javascript, typescript]
+    severity: WARNING
+    message: Starts a program through the shell
+    patterns:
+      - pattern: "$FN(..., {..., shell: true, ...})"
+      - metavariable-regex:
+          metavariable: $FN
+          regex: ^(.*\.)?(spawn|spawnSync|execFile|execFileSync|fork)$
+
+  - id: argus.dump-env
+    languages: [javascript, typescript]
+    severity: WARNING
+    message: Reads every environment variable at once
+    pattern-either:
+      - pattern: JSON.stringify(process.env, ...)
+      - pattern: Object.entries(process.env)
+      - pattern: Object.keys(process.env)
+      - pattern: Object.values(process.env)
+
+  - id: argus.sensitive-path
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: Mentions a file that holds keys, passwords or browser data
+    patterns:
+      - pattern: '"$S"'
+      - metavariable-regex:
+          metavariable: $S
+          regex: (?i).*(\.ssh(/|$)|id_rsa|id_ed25519|\.aws/credentials|\.npmrc|\.pypirc|\.netrc|\.git-credentials|\.docker/config\.json|\.kube/config|gcloud/credentials|Keychains|Login Data|Cookies\.binarycookies|/Cookies$|wallet\.dat|\.gnupg)
+
+  - id: argus.startup-file
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: Mentions a file that runs at log-in or controls Claude
+    patterns:
+      - pattern: '"$S"'
+      - metavariable-regex:
+          metavariable: $S
+          regex: .*(\.bashrc|\.zshrc|\.bash_profile|\.zprofile|\.profile$|LaunchAgents|LaunchDaemons|crontab|\.claude/settings|\.claude\.json|CLAUDE\.md$|Startup\\|CurrentVersion\\Run)
+
+  - id: argus.throwaway-endpoint
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: Talks to a service often used to collect stolen data
+    patterns:
+      - pattern: '"$S"'
+      - metavariable-regex:
+          metavariable: $S
+          regex: (?i).*(discord(app)?\.com/api/webhooks|api\.telegram\.org/bot|webhook\.site|requestbin|pipedream\.net|ngrok(-free)?\.(io|app)|pastebin\.com|transfer\.sh|interact\.sh|oast\.(fun|pro|live|site|online|me)|burpcollaborator|canarytokens)
+
+  - id: argus.raw-ip
+    languages: [javascript, typescript]
+    severity: WARNING
+    message: Connects to a bare IP address instead of a named site
+    patterns:
+      - pattern: '"$S"'
+      - metavariable-regex:
+          metavariable: $S
+          regex: ^(https?|wss?)://(?!127\.|0\.0\.0\.0|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)\d{1,3}(\.\d{1,3}){3}
+
+  - id: argus.tls-off
+    languages: [javascript, typescript]
+    severity: WARNING
+    message: Turns off HTTPS certificate checks
+    pattern-either:
+      - pattern: "{..., rejectUnauthorized: false, ...}"
+      - pattern: process.env.NODE_TLS_REJECT_UNAUTHORIZED = $V
