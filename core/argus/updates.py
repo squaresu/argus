@@ -15,6 +15,7 @@ import re
 import shutil
 import ssl
 import subprocess
+import sys
 import tempfile
 import time
 import urllib.error
@@ -159,6 +160,8 @@ def check(fetcher=None):
         except OSError:
             pass
     except Exception as err:
+        # into argus.log, so a failed check can be diagnosed from the log alone
+        print(f'update check failed: {why_failed(err)} ({type(err).__name__}: {err})', file=sys.stderr, flush=True)
         try:
             saved = json.loads(cache.read_text(encoding='utf-8'))
             latest, url, asset = saved['latest'], saved.get('url') or RELEASES, saved.get('asset') or ''
@@ -192,6 +195,7 @@ def download(url, dest: Path):
     except UpdateError:
         raise
     except Exception as err:
+        print(f'update download failed: {type(err).__name__}: {err}', file=sys.stderr, flush=True)
         if is_certificate_error(err):
             p = _curl(['-fL', '-o', str(dest), url], 120)
             if p.returncode == 0 and dest.is_file() and dest.stat().st_size <= MAX_ZIP:
