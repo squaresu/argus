@@ -113,8 +113,24 @@ input[type=url]:focus { outline: none; border-color: var(--pick-line); }
 @media (prefers-reduced-motion: reduce) { .radar span { animation: none; top: 50%; } .spinner { animation: none; } }
 
 /* report view */
-.update { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; background: var(--card); border: 1px solid var(--line); border-left: 4px solid var(--mint); border-radius: 14px; padding: 10px 14px; margin: 0 0 16px; box-shadow: var(--shadow); font-size: 14px; }
-.update-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--mint); box-shadow: 0 0 8px var(--mint-bright); flex: none; }
+.update { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin: 0 0 18px; padding: 16px 18px; border-radius: 18px;
+  background: linear-gradient(135deg, var(--navy-900), var(--navy-700)); color: var(--cream); border: 2px solid var(--mint);
+  box-shadow: 0 0 0 4px #76d6a033, var(--shadow); }
+.update-icon { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%; flex: none; font-size: 20px; font-weight: 800;
+  background: var(--mint); color: var(--navy-900); animation: nudge 1.6s ease-in-out infinite; }
+@keyframes nudge { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
+@media (prefers-reduced-motion: reduce) { .update-icon { animation: none; } }
+.update-msg b { display: block; font-size: 17px; }
+.update-msg small { display: block; opacity: .8; font-size: 13px; margin-top: 2px; }
+.update .btn { background: transparent; color: var(--cream); border-color: #ece8e055; }
+.update .btn:hover { background: #ece8e01a; }
+.update .btn.update-now { background: var(--mint); color: var(--navy-900); border-color: transparent; font-size: 16px; font-weight: 800; padding: 10px 26px; }
+.update .btn.update-now:hover { background: var(--mint-bright); }
+.update .link { color: #ece8e0b3; }
+.update .installing { color: var(--cream); font-size: 14px; max-width: none; }
+.update-note { color: #ece8e0cc !important; }
+.has-update { position: relative; }
+.has-update::after { content: ""; position: absolute; top: -2px; right: -10px; width: 8px; height: 8px; border-radius: 50%; background: var(--mint); box-shadow: 0 0 6px var(--mint-bright); }
 #about-update { display: block; color: var(--link); font-size: 12.5px; }
 .brand.big .small-btn { margin-left: auto; font-size: 13px; padding: 5px 12px; }
 .update-actions { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }

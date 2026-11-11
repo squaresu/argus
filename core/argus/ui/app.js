@@ -80,6 +80,7 @@ function renderUpdate() {
   try { dismissed = localStorage.getItem('argus-update-dismissed') || ''; } catch {}
   $('#update').hidden = !((u.newer && u.latest !== dismissed) || state.updating || updating);
   $('#update-now').hidden = !u.auto;
+  $('#about-open').classList.toggle('has-update', !!u.newer);
   $('#update-why').hidden = u.auto || !u.why_manual;
   $('#update-why').textContent = u.why_manual || '';
   if (state.updating && !updating) watchUpdate(state.updating);
@@ -89,7 +90,7 @@ function renderUpdate() {
   $('#about-update').textContent = !u.checked ? '正在檢查有沒有新版本…' : u.newer ? `有新版本 ${u.latest} 可以更新` : u.latest ? '已經是最新版' : u.failed ? '連不上 GitHub，沒辦法檢查新版本' : '';
   // the check runs in the background right after Argus starts; look again until it has answered
   clearTimeout(renderUpdate.timer);
-  if (!u.checked) renderUpdate.timer = setTimeout(() => loadState().catch(() => {}), 4000);
+  if (!u.checked) renderUpdate.timer = setTimeout(() => loadState().catch(() => {}), 1000);
 }
 
 let updating = null;

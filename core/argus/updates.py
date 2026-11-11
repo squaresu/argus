@@ -1,4 +1,4 @@
-"""New versions of Argus: notice them, and update in place with one click.
+r"""New versions of Argus: notice them, and update in place with one click.
 
 The check asks GitHub for the latest published release each time Argus starts, and again when the person presses
 檢查更新. Only a plain request for the release information is sent, nothing about the person's skills or reports.
@@ -62,7 +62,7 @@ def fetch():
 
 
 def is_argus_copy(path: Path):
-    """An installed Argus: Argus.app on a Mac, or the Windows folder with Argus.cmd and app\."""
+    r"""An installed Argus: Argus.app on a Mac, or the Windows folder with Argus.cmd and app\."""
     return path.suffix == '.app' or ((path / 'Argus.cmd').is_file() and (path / 'app').is_dir())
 
 
