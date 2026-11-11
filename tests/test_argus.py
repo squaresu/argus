@@ -548,6 +548,10 @@ class Mcp(unittest.TestCase):
         (home / '.cursor' / 'mcp.json').write_text(json.dumps({'mcpServers': {'TalkToFigma': {
             'command': 'bun', 'args': ['run', '/Users/me/Documents/talk-to-figma/src/server.ts']}}}))
         plugin_run = {'command': 'bun', 'args': ['run', '--cwd', '${CLAUDE_PLUGIN_ROOT}', '--shell=bun', '--silent', 'start']}
+        catalog = home / '.claude' / 'plugins' / 'marketplaces' / 'official' / 'plugins' / 'only-on-offer'
+        catalog.mkdir(parents=True)
+        (catalog / '.mcp.json').write_text(json.dumps({'mcpServers': {'only-on-offer': plugin_run}}))
+        installed, enabled = {}, {'switched-off@official': False}
         for plugin, servers in {
             'discord': {'discord': plugin_run}, 'imessage': {'imessage': plugin_run},
             'firebase': {'firebase': {'command': 'npx', 'args': ['-y', 'firebase-tools@latest', 'mcp']}},
@@ -555,10 +559,14 @@ class Mcp(unittest.TestCase):
             'serena': {'serena': {'command': 'uvx', 'args': ['--from', 'git+https://github.com/oraios/serena',
                                                              'serena', 'start-mcp-server']}},
             'pinned-git': {'pinned-git': {'command': 'uvx', 'args': ['--from', 'git+https://github.com/o/r@v1.2.0', 'r']}},
+            'switched-off': {'switched-off': plugin_run},
         }.items():
-            d = home / '.claude' / 'plugins' / plugin
+            d = home / '.claude' / 'plugins' / 'cache' / 'official' / plugin / '1.0.0'
             d.mkdir(parents=True)
             (d / '.mcp.json').write_text(json.dumps({'mcpServers': servers}))
+            installed[f'{plugin}@official'] = [{'scope': 'user', 'installPath': str(d)}]
+        (home / '.claude' / 'plugins' / 'installed_plugins.json').write_text(json.dumps({'version': 2, 'plugins': installed}))
+        (home / '.claude' / 'settings.json').write_text(json.dumps({'enabledPlugins': enabled}))
         project = home / 'design-agent'
         project.mkdir()
         (project / '.mcp.json').write_text(json.dumps({'mcpServers': {'radar': {'command': 'node', 'args': ['r.js']}}}))
@@ -569,6 +577,8 @@ class Mcp(unittest.TestCase):
         found = mcp.inspect_all(home=home, desktop=desk)
         r = {x.name: x for x in found}
         caps = lambda x: sorted(c['id'] for c in r[x].capabilities)
+        self.assertNotIn('only-on-offer', r)                         # in a marketplace's catalog, not installed
+        self.assertNotIn('switched-off', r)                          # installed, but turned off
         self.assertEqual(self.rules(r['TalkToFigma']), [])           # runs a script on this computer, nothing to download
         self.assertEqual(caps('TalkToFigma'), ['autorun', 'exec'])
         self.assertEqual(self.rules(r['discord']), ['MCP-INBOUND-MESSAGES'])
