@@ -287,6 +287,11 @@ CSS = '''
 --line:#ece8e01a;--accent:#76d6a0;--accent-ink:#172033;--brand:#76d6a0;--safe:#76d6a0;--caution:#e8b04f;--danger:#f07c66;--error:#9aa3b5;--soft:#2c3d5e;--shadow:none}
 .pill{color:#172033!important}}
 *{box-sizing:border-box}
+*{scrollbar-width:thin;scrollbar-color:#17203338 transparent}
+::-webkit-scrollbar{width:10px;height:10px}::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:#17203338;border-radius:999px;border:3px solid transparent;background-clip:padding-box}
+::-webkit-scrollbar-thumb:hover{background-color:#17203366}
+@media (prefers-color-scheme:dark){*{scrollbar-color:#ece8e02e transparent}::-webkit-scrollbar-thumb{background-color:#ece8e02e}::-webkit-scrollbar-thumb:hover{background-color:#76d6a080}}
 body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.7 -apple-system,BlinkMacSystemFont,"PingFang TC","Microsoft JhengHei UI","Noto Sans TC",sans-serif}
 main{max-width:920px;margin:0 auto;padding:36px 20px 64px}
 .brand{display:flex;align-items:center;gap:8px;font-weight:700;letter-spacing:.04em;margin-bottom:8px}

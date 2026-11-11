@@ -69,7 +69,7 @@ function renderScanners() {
       : s.status === 'broken' ? `<span class="fix"><span class="badge bad">打不開</span>${button('重新安裝')}</span>`
       : button('安裝');
     return `<li class="scanner ${s.installed ? '' : 'off'}">
-      <input type="checkbox" data-id="${esc(s.id)}" ${checked.has(s.id) ? 'checked' : ''} ${s.installed ? '' : 'disabled'} aria-label="${esc(s.name)}">
+      <input type="checkbox" data-id="${esc(s.id)}" ${s.installed && checked.has(s.id) ? 'checked' : ''} ${s.installed ? '' : 'disabled'} aria-label="${esc(s.name)}">
       <div><span class="name">${esc(s.name)}</span><span class="vendor">${esc(s.vendor)} · ${esc(s.license)}</span><p>${esc(s.summary)}</p></div>
       ${right}</li>`;
   }).join('');
@@ -366,7 +366,31 @@ $('#history').addEventListener('click', (ev) => {
   if (li) openReport(li.dataset.file);
 });
 $('#open-reports').addEventListener('click', () => api('/api/open', {}).catch((e) => toast(e.message)));
-for (const b of ['#about-open', '#about-open-2']) $(b).addEventListener('click', () => $('#about').showModal());
+// About: three tabs, so nothing needs a long scroll; the footer link opens straight onto 隱私
+function showTab(name) {
+  document.querySelectorAll('#about [role=tab]').forEach((t) => {
+    const on = t.dataset.tab === name;
+    t.setAttribute('aria-selected', on);
+    t.tabIndex = on ? 0 : -1;
+    $(`#panel-${t.dataset.tab}`).hidden = !on;
+  });
+  $('#about-body').scrollTop = 0;
+}
+function openAbout(tab = 'intro') { showTab(tab); $('#about').showModal(); }
+$('#about-open').addEventListener('click', () => openAbout());
+$('#about-open-2').addEventListener('click', () => openAbout('privacy'));
+const tabs = [...document.querySelectorAll('#about [role=tab]')];
+tabs.forEach((t, i) => {
+  t.addEventListener('click', () => showTab(t.dataset.tab));
+  t.addEventListener('keydown', (ev) => {   // arrow keys move between tabs
+    const step = { ArrowRight: 1, ArrowLeft: -1 }[ev.key];
+    if (!step) return;
+    const next = tabs[(i + step + tabs.length) % tabs.length];
+    showTab(next.dataset.tab); next.focus(); ev.preventDefault();
+  });
+});
+// a click on the dimmed backdrop closes a dialog
+document.querySelectorAll('dialog').forEach((d) => d.addEventListener('click', (ev) => { if (ev.target === d) d.close(); }));
 
 // keep the local server alive while this page is open; say so if it has gone away
 setInterval(async () => {
