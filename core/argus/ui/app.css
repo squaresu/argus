@@ -113,7 +113,7 @@ input[type=url]:focus { outline: none; border-color: var(--pick-line); }
 @media (prefers-reduced-motion: reduce) { .radar span { animation: none; top: 50%; } .spinner { animation: none; } }
 
 /* report view */
-.update { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; background: var(--mint); color: var(--navy-900); border: 1px solid var(--mint-ink); border-left: 4px solid var(--navy-900); border-radius: 14px; padding: 10px 14px; margin: 0 0 16px; box-shadow: var(--shadow); font-size: 14px; }
+.update { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; background: var(--mint); color: var(--navy-900); border: 1px solid var(--mint-ink); border-radius: 14px; padding: 10px 14px; margin: 0 0 16px; box-shadow: var(--shadow); font-size: 14px; }
 .update-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--navy-900); flex: none; animation: blink 1.4s ease-in-out infinite; }
 @keyframes blink { 50% { opacity: .25; } }
 @media (prefers-reduced-motion: reduce) { .update-dot { animation: none; } }
