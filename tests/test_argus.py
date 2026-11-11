@@ -272,7 +272,7 @@ class Report(unittest.TestCase):
         self.assertIn('不建議安裝', page)
         self.assertIn('Square Su', page)
         self.assertNotIn('<b>boom</b>', page)              # scanner text is escaped
-        self.assertEqual(page.count('</script>'), 2)        # nothing in the data closes the script early
+        self.assertEqual(page.count('</script>'), 3)        # theme, data, code: nothing in the data closes a script early
         self.assertEqual(r.verdict, 'DO_NOT_INSTALL')
 
     def test_verdict_ignores_errors_and_skips(self):

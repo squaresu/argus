@@ -236,7 +236,8 @@ def render(title, results, chosen, versions, when=None, installed=False):
     }
     ask_json = json.dumps(ask, ensure_ascii=False).replace('</', '<\\/')
     licences = '、'.join(f'{e(s.name)}（{e(s.vendor)}，{e(s.license)}）' for s in chosen)
-    return f'''<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8">
+    return f'''<!doctype html><html lang="zh-Hant" data-theme="dark"><head><meta charset="utf-8">
+<script>try{{if(localStorage.getItem('argus-theme')==='light')document.documentElement.dataset.theme='light'}}catch(e){{}}</script>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{'MCP 伺服器檢查報告' if is_mcp else '技能安全報告'} · {e(title)}</title>
 <style>{CSS}</style></head><body><main>
@@ -283,15 +284,16 @@ LOGO = ('<img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAAC
 CSS = '''
 :root{--ink:#172033;--muted:#5b6478;--bg:#f6f3ee;--paper:#fffdf9;--card:#fff;--line:#17203317;--accent:#1e2a44;--accent-ink:#ece8e0;
 --brand:#22744c;--mint:#76d6a0;--safe:#2f855a;--caution:#b7791f;--danger:#b23a2a;--error:#7a7f8c;--soft:#efebe4;--shadow:0 1px 2px #1720330d,0 4px 16px #17203308}
-@media (prefers-color-scheme:dark){:root{--ink:#ece8e0;--muted:#9aa3b5;--bg:#131b2b;--paper:#1e2a44;--card:#263552;
+:root[data-theme=dark]{color-scheme:dark;--ink:#ece8e0;--muted:#9aa3b5;--bg:#131b2b;--paper:#1e2a44;--card:#263552;
 --line:#ece8e01a;--accent:#76d6a0;--accent-ink:#172033;--brand:#76d6a0;--safe:#76d6a0;--caution:#e8b04f;--danger:#f07c66;--error:#9aa3b5;--soft:#2c3d5e;--shadow:none}
-.pill{color:#172033!important}}
+[data-theme=dark] .pill{color:#172033!important}
+@media print{:root[data-theme=dark]{color-scheme:light;--ink:#172033;--muted:#5b6478;--bg:#fff;--paper:#fff;--card:#fff;--line:#17203326;--brand:#22744c;--safe:#2f855a;--caution:#b7791f;--danger:#b23a2a;--soft:#efebe4}[data-theme=dark] .pill{color:#fff!important}}
 *{box-sizing:border-box}
 *{scrollbar-width:thin;scrollbar-color:#17203338 transparent}
 ::-webkit-scrollbar{width:10px;height:10px}::-webkit-scrollbar-track{background:transparent}
 ::-webkit-scrollbar-thumb{background:#17203338;border-radius:999px;border:3px solid transparent;background-clip:padding-box}
 ::-webkit-scrollbar-thumb:hover{background-color:#17203366}
-@media (prefers-color-scheme:dark){*{scrollbar-color:#ece8e02e transparent}::-webkit-scrollbar-thumb{background-color:#ece8e02e}::-webkit-scrollbar-thumb:hover{background-color:#76d6a080}}
+[data-theme=dark] *{scrollbar-color:#ece8e02e transparent}[data-theme=dark] ::-webkit-scrollbar-thumb{background-color:#ece8e02e}[data-theme=dark] ::-webkit-scrollbar-thumb:hover{background-color:#76d6a080}
 body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.7 -apple-system,BlinkMacSystemFont,"PingFang TC","Microsoft JhengHei UI","Noto Sans TC",sans-serif}
 main{max-width:920px;margin:0 auto;padding:36px 20px 64px}
 .brand{display:flex;align-items:center;gap:8px;font-weight:700;letter-spacing:.04em;margin-bottom:8px}

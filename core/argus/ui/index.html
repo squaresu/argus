@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="zh-Hant">
+<html lang="zh-Hant" data-theme="dark">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -7,6 +7,7 @@
 <title>Argus · AI 技能安全掃描</title>
 <link rel="icon" type="image/png" href="/ui/icon.png?t=__TOKEN__">
 <link rel="stylesheet" href="/ui/app.css?t=__TOKEN__">
+<script>try { if (localStorage.getItem('argus-theme') === 'light') document.documentElement.dataset.theme = 'light'; } catch {}</script>
 </head>
 <body>
 <div class="offline" id="offline" hidden>Argus 已經關閉了（頁面閒置太久時會自動關閉）。請重新打開 Argus App。</div>
@@ -17,7 +18,13 @@
     <img src="/ui/icon.png?t=__TOKEN__" width="42" height="42" alt="">
     <div><b>Argus</b><span>AI 技能安全掃描</span></div>
   </div>
-  <button class="about-btn" id="about-open" type="button">關於</button>
+  <div class="bar-actions">
+    <button class="theme-btn" id="theme" type="button" aria-label="切換成淺色模式" title="切換成淺色模式">
+      <svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+      <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><path d="M12 2v2.2M12 19.8V22M4.9 4.9l1.6 1.6M17.5 17.5l1.6 1.6M2 12h2.2M19.8 12H22M4.9 19.1l1.6-1.6M17.5 6.5l1.6-1.6"/></svg>
+    </button>
+    <button class="about-btn" id="about-open" type="button">關於</button>
+  </div>
 </header>
 <div class="hero" id="hero">
   <h1>安裝 AI 技能之前，先讓 Argus 看一眼。</h1>

@@ -392,6 +392,21 @@ tabs.forEach((t, i) => {
 // a click on the dimmed backdrop closes a dialog
 document.querySelectorAll('dialog').forEach((d) => d.addEventListener('click', (ev) => { if (ev.target === d) d.close(); }));
 
+// 深色 (default) or 淺色; remembered on this computer, and passed on to a report open in the frame
+function applyTheme(theme) {
+  document.documentElement.dataset.theme = theme;
+  const next = theme === 'dark' ? '淺色' : '深色';
+  $('#theme').setAttribute('aria-label', `切換成${next}模式`);
+  $('#theme').title = `切換成${next}模式`;
+  try { $('#report-frame').contentDocument?.documentElement.setAttribute('data-theme', theme); } catch {}
+}
+applyTheme(document.documentElement.dataset.theme || 'dark');
+$('#theme').addEventListener('click', () => {
+  const theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+  try { localStorage.setItem('argus-theme', theme); } catch {}
+  applyTheme(theme);
+});
+
 // keep the local server alive while this page is open; say so if it has gone away
 setInterval(async () => {
   try { await api('/api/alive'); $('#offline').hidden = true; } catch { $('#offline').hidden = false; }
