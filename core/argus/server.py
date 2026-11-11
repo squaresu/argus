@@ -153,6 +153,9 @@ class Handler(BaseHTTPRequestHandler):
                 # the install job checks the tool starts; record that before the job reports done
                 job = jobs.install(sid, on_checked=lambda v: _status.__setitem__(sid, ('ok', v) if v else ('broken', '')))
                 return self.send(200, job.to_dict())
+            if path == '/api/review':   # 標記為已看過, from a report
+                count = jobs.mark_reviewed(data.get('report') or '', data.get('key') or '', bool(data.get('reviewed', True)))
+                return self.send(200, {'reviewed': count})
             if path == '/api/check-update':   # 「檢查更新」 in About
                 return self.send(200, updates.check())
             if path == '/api/update':

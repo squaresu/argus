@@ -9,7 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 
-from . import report, scanners, targets, tools, updates
+from . import capabilities, mcp, report, reviews, scanners, targets, tools, updates
 from .model import Outcome, SkillResult
 
 PARALLEL = 3   # scanner runs at a time; each is its own process
@@ -71,7 +71,39 @@ def busy():
 
 # --- scanning ---
 
+def skill_key(kind, value, folder: Path, tmp: Path):
+    """Identifies a skill across scans: its real folder when it's on this computer; for a download, where it came
+    from and where it sits inside (leaving out the archive's own top folder, whose name changes with the version)."""
+    if kind in ('claude', 'folder'):
+        return 'path:' + str(folder.resolve())
+    try:
+        parts = folder.relative_to(tmp).parts
+    except ValueError:
+        parts = (folder.name,)
+    inside = '/'.join(parts[2:] if kind == 'github' else parts[1:]) or '.'
+    return f'{kind}:{value.strip()}::{inside}'
+
+
+def track(results, folders):
+    """Compare each result with the reviewed copy (or the last scan), mark findings already seen, remember this
+    scan. → {key: {'name', 'snapshot'}} for the report, so 標記為已看過 records exactly what the report showed."""
+    store = reviews.Store()
+    snapshots = {}
+    for r, folder in zip(results, folders):
+        snap = reviews.snapshot(folder, r.findings, files=r.tracked or None)
+        r.change = store.compare(r.key, snap)
+        known = set(r.change.get('known', []))
+        for f in r.findings:
+            f.known = f.fingerprint in known
+        store.remember_scan(r.key, r.name, snap)
+        snapshots[r.key] = {'name': r.name, 'snapshot': snap}
+    store.save()
+    return snapshots
+
+
 def scan(kind, value, scanner_ids):
+    if kind == 'mcp':
+        return scan_mcp()
     chosen = [s for s in scanners.all_scanners() if s.id in scanner_ids and s.installed()]
     if not chosen:
         raise targets.TargetError('請至少勾選一個已安裝的掃描工具。')
@@ -81,7 +113,8 @@ def scan(kind, value, scanner_ids):
         try:
             job.say('正在準備要掃描的內容…')
             title, folders = targets.resolve(kind, value, tmp)
-            results = [SkillResult(targets.skill_name(f), str(f)) for f in folders]
+            results = [SkillResult(targets.skill_name(f), str(f), key=skill_key(kind, value, f, tmp),
+                                   capabilities=capabilities.analyze(f)) for f in folders]
             pairs = [(r, f, s) for r, f in zip(results, folders) for s in chosen]
             job.total = len(pairs)
             job.say(f'找到 {len(folders)} 個技能，用 {len(chosen)} 個工具檢查…')
@@ -110,12 +143,42 @@ def scan(kind, value, scanner_ids):
             order = [s.id for s in chosen]
             for r in results:
                 r.outcomes.sort(key=lambda o: order.index(o.scanner))
+            job.say('正在跟上次的結果比對…')
+            snapshots = track(results, folders)
             job.say('正在產生報告…')
-            job.result = report.save(title, results, chosen, versions)
+            job.result = report.save(title, results, chosen, versions, snapshots)
         finally:
             targets.cleanup(tmp)
 
     return start(Job('scan', '掃描'), work)
+
+
+def scan_mcp():
+    """Argus's own check of the MCP servers set up on this computer: reads settings, starts nothing."""
+    def work(job):
+        job.say('正在讀取 MCP 伺服器的設定…')
+        results = mcp.inspect_all()
+        if not results:
+            raise targets.TargetError('在這台電腦上找不到任何 MCP 伺服器的設定（Claude Code、Claude 桌面版、外掛、Cursor）。')
+        job.total = job.done = len(results)
+        job.say(f'找到 {len(results)} 個 MCP 伺服器，正在比對…')
+        snapshots = track(results, [None] * len(results))
+        job.result = report.save('我的 MCP 伺服器', results, [mcp.TOOL], {mcp.SCANNER: '內建'}, snapshots)
+
+    return start(Job('scan', '掃描 MCP 伺服器'), work)
+
+
+def mark_reviewed(report_file, key, reviewed=True):
+    """標記為已看過 (or undo it) for one skill, using the snapshot saved with that report."""
+    meta = tools.reports_dir() / (Path(report_file).stem + '.json')
+    try:
+        entry = json.loads(meta.read_text(encoding='utf-8'))['snapshots'][key]
+    except (OSError, ValueError, KeyError):
+        raise targets.TargetError('這份報告比較舊，沒有記錄可以比對的資料。請重新掃描一次再標記。')
+    store = reviews.Store()
+    store.mark(key, entry['name'], entry['snapshot'], reviewed)
+    store.save()
+    return store.reviewed_count()
 
 
 # --- installing a scanner ---

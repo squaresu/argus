@@ -1,5 +1,6 @@
 """The shapes every scanner's results are turned into, so the report can treat all scanners alike."""
 
+import hashlib
 import os
 import re
 from dataclasses import asdict, dataclass, field
@@ -35,10 +36,17 @@ class Finding:
     category: str = ''    # the scanner's own category name, kept for the question to Claude
     detail: str = ''      # the scanner's own explanation (usually English)
     calm: str = ''        # why this is probably nothing to worry about; '' means it needs a look
+    known: bool = False   # already there when the person marked the skill 已看過
 
     @property
     def ext(self):
         return os.path.splitext(self.file)[1].lower()
+
+    @property
+    def fingerprint(self):
+        """Identifies the same finding across scans. Line numbers are left out: they shift when a file is edited."""
+        text = '|'.join((self.scanner, self.rule, self.category, self.file, ' '.join(self.snippet.split())))
+        return hashlib.sha1(text.encode('utf-8')).hexdigest()[:16]
 
 
 @dataclass
@@ -57,6 +65,11 @@ class SkillResult:
     name: str
     path: str
     outcomes: list[Outcome] = field(default_factory=list)
+    key: str = ''                                             # stable id across scans (see jobs.skill_key)
+    capabilities: list[dict] = field(default_factory=list)   # what the skill can do (see capabilities.py)
+    change: dict = field(default_factory=dict)                # compared with the reviewed or last-scanned copy
+    kind: str = 'skill'                                       # 'skill', or 'mcp' for an MCP server entry
+    tracked: dict = field(default_factory=dict)               # MCP entries: a hash of the settings, in place of files
 
     @property
     def verdict(self):

@@ -42,6 +42,8 @@ function renderTarget() {
   $('#detail-claude').hidden = k !== 'claude';
   $('#detail-pick').hidden = k !== 'folder' && k !== 'zip';
   $('#detail-github').hidden = k !== 'github';
+  $('#detail-mcp').hidden = k !== 'mcp';
+  $('#tools-card').hidden = k === 'mcp';   // the MCP check is Argus's own; no scanners involved
   if (k === 'folder' || k === 'zip') {
     $('#pick').textContent = k === 'folder' ? '選擇資料夾…' : '選擇 zip 檔…';
     $('#picked').textContent = picked[k] || '還沒選擇';
@@ -139,6 +141,7 @@ function validate() {
   const tools = state ? state.scanners.filter((s) => s.installed && checked?.has(s.id)) : [];
   let hint = '';
   if (!state) hint = '';
+  else if (k === 'mcp') hint = '';
   else if (!state.scanners.some((s) => s.installed)) hint = '先安裝至少一個掃描工具（建議從 SkillSpector 開始）。';
   else if (!tools.length) hint = '請至少勾選一個工具。';
   else if ((k === 'folder' || k === 'zip') && !picked[k]) hint = k === 'folder' ? '請先選擇資料夾。' : '請先選擇 zip 檔。';
@@ -146,7 +149,7 @@ function validate() {
   else if (k === 'claude' && !state.claude_found) hint = '這台電腦上好像沒有 Claude 的技能資料夾，不過還是可以試試看。';
   if (state?.running) hint = '有工作正在進行…';
   $('#start-hint').textContent = hint;
-  $('#start').disabled = !!state?.running || !tools.length || /^請|^先/.test(hint);
+  $('#start').disabled = !!state?.running || (k !== 'mcp' && !tools.length) || /^請|^先/.test(hint);
 }
 
 async function loadState() {
@@ -187,6 +190,7 @@ async function follow(jobId) {
     let job;
     try { job = await api(`/api/job/${jobId}`); } catch (err) { await sleep(1500); continue; }
     $('#p-title').textContent = job.status === 'running' ? '正在檢查…' : job.status === 'done' ? '檢查完成' : '沒有完成';
+    if (job.status === 'running' && !job.total) $('#p-bar').style.width = '4%';
     $('#p-current').textContent = job.status === 'error' ? job.error : job.current;
     $('#p-bar').style.width = job.total ? `${Math.round((job.done / job.total) * 100)}%` : '4%';
     $('#p-count').textContent = job.total ? `${job.done} / ${job.total}` : '';

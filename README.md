@@ -27,6 +27,9 @@ core/argus/            核心，只用 Python 標準函式庫；Mac 和之後的
   targets.py           把「Claude 技能／資料夾／zip／GitHub」變成要掃的技能資料夾（含安全解壓縮）
   report.py            產生獨立的 HTML 報告（不靠 Argus 也能打開、分享）
   model.py             所有工具共用的結果格式（Finding / Outcome / SkillResult）
+  capabilities.py      能力一覽：從技能的程式和 SKILL.md 判斷它會不會連網、執行程式、寫檔、碰觸機密
+  reviews.py           已看過和更新比對（檔案雜湊、發現指紋，只存在本機）
+  mcp.py               MCP 伺服器設定檢查（只讀設定檔，不啟動伺服器）
   native.py            系統的選資料夾、選檔案、在 Finder 打開（唯一跟平台有關的地方）
   scanners/            每個掃描工具一個檔案；加檔案就是加工具
   ui/                  網頁介面（HTML / CSS / JS，沒有外部相依）
