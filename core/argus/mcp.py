@@ -17,7 +17,20 @@ from .model import Finding, Outcome, SkillResult
 SCANNER = 'argus-mcp'
 SCANNER_NAME = 'Argus MCP 檢查'
 TOOL = SimpleNamespace(id=SCANNER, name=SCANNER_NAME, vendor='Argus', license='MIT')
-RUNNERS = {'npx', 'bunx', 'pnpx', 'uvx', 'pipx', 'pnpm', 'yarn', 'bun', 'deno'}
+# commands that download what they run each time they start, and package managers whose x / dlx / exec does the same;
+# `bun run start` or `node server.js` runs code already on the computer
+DOWNLOADERS = {'npx', 'bunx', 'pnpx', 'uvx', 'pipx'}
+PACKAGE_MANAGERS = {'bun', 'pnpm', 'yarn', 'npm'}
+# big companies' and the MCP project's own packages: following their latest release is a small risk
+WELL_KNOWN = re.compile(
+    r'^(@(modelcontextprotocol|playwright|anthropic-ai|microsoft|azure|google-cloud|googleworkspace|aws|awslabs|'
+    r'cloudflare|vercel|supabase|stripe|notionhq|sentry|upstash|figma|github|atlassian|linear|shopify|mongodb-js|'
+    r'netlify|neondatabase|heroku|twilio|redis)/|firebase-tools(@|$)|awslabs\.|mcp-server-(fetch|git|time|sqlite)([=@]|$))',
+    re.I)
+# chat apps whose plugins pass messages other people send straight to Claude
+MESSAGING = {'discord': 'Discord', 'telegram': 'Telegram', 'imessage': 'iMessage', 'whatsapp': 'WhatsApp',
+             'signal': 'Signal', 'fakechat': '測試用聊天室'}
+CODE_FILE = re.compile(r'\.(m?[jt]sx?|cjs|py|rb|sh|go|jar|exe|php)$', re.I)
 SHELLS = {'sh', 'bash', 'zsh', 'cmd', 'cmd.exe', 'powershell', 'powershell.exe', 'pwsh'}
 LOCAL_HOSTS = re.compile(r'^https?://(localhost|127\.0\.0\.1|\[::1\]|0\.0\.0\.0)(:\d+)?(/|$)', re.I)
 SECRET_NAME = re.compile(r'KEY|TOKEN|SECRET|PASSWORD|PASSWD|AUTH|CREDENTIAL|COOKIE|SESSION', re.I)
@@ -69,9 +82,15 @@ def discover(home: Path | None = None, desktop: Path | None = None):
     user = _load(home / '.claude.json') or {}
     add(user, 'Claude Code（所有專案）')
     for project, settings in (user.get('projects') or {}).items():
-        if isinstance(settings, dict):
-            add(settings, f'Claude Code 專案：{Path(project).name}')
-        add(_load(Path(project) / '.mcp.json'), f'專案的 .mcp.json：{Path(project).name}')
+        # a server set up both for you alone and in the project's .mcp.json: Claude Code uses yours, so only that one is shown
+        mine = _servers(settings)
+        shared = _servers(_load(Path(project) / '.mcp.json'))
+        for name, cfg in mine.items():
+            note = '（專案的 .mcp.json 也有同名設定，Claude Code 會用這一份）' if name in shared else ''
+            found.append((name, f'Claude Code 專案：{Path(project).name}{note}', cfg))
+        for name, cfg in shared.items():
+            if name not in mine:
+                found.append((name, f'專案的 .mcp.json：{Path(project).name}', cfg))
     add(_load(desktop / 'claude_desktop_config.json'), 'Claude 桌面版')
     ext_root = desktop / 'Claude Extensions'
     if ext_root.is_dir():
@@ -97,6 +116,36 @@ def discover(home: Path | None = None, desktop: Path | None = None):
             seen.add(ident)
             unique.append((name, where, cfg))
     return unique
+
+
+def _download(exe, args):
+    """→ the package or source this command downloads every time it starts, or '' when it runs code already here."""
+    if exe in PACKAGE_MANAGERS:
+        sub = next((a for a in args if not a.startswith('-')), '')
+        if sub not in ('x', 'dlx', 'exec') or (exe in ('pnpm', 'yarn') and sub == 'exec'):
+            return ''                                    # bun run start, pnpm exec tsc ...: the plugin's own code
+        args = args[args.index(sub) + 1:]
+    elif exe == 'deno':
+        target = next((a for a in args[1:] if not a.startswith('-')), '') if args[:1] == ['run'] else ''
+        return target if re.match(r'(https?:|npm:|jsr:)', target) else ''
+    elif exe not in DOWNLOADERS:
+        return ''
+    if exe == 'pipx' and args[:1] == ['run']:
+        args = args[1:]
+    for flag in ('--from', '-p', '--package'):        # uvx --from git+https://... cmd, npx -p pkg cmd
+        if flag in args[:-1]:
+            return args[args.index(flag) + 1]
+    return _package_arg(args)
+
+
+def _git_source(pkg):
+    return bool(re.match(r'(git\+|github:|gitlab:|https?://(github|gitlab)\.com/)', pkg))
+
+
+def _git_pinned(pkg):
+    """git+https://github.com/o/r@v1.2 (Python) or github:o/r#v1.2 (npm) name a release or commit."""
+    tail = re.sub(r'^git\+ssh://git@', '', pkg)
+    return '#' in tail or re.search(r'@[^/@]+$', tail) is not None
 
 
 def _pkg_pinned(runner, pkg):
@@ -160,16 +209,33 @@ def inspect(name, where, cfg):
         cap('exec', '⚙️', '執行程式', '這個 MCP 伺服器是在你的電腦上執行的程式，有你的帳號能做的所有權限。', [shown])
         cap('autorun', '⚡', '自動執行', 'Claude 一打開就會自動啟動它，不用你叫它。', ['跟著 Claude 一起啟動'])
     # what runs
-    if exe in RUNNERS:
-        pkg = _package_arg(args)
-        if pkg:
-            cap('install', '📦', '安裝套件', '每次啟動時會從網路下載套件來執行。', [f'{exe} {pkg}'])
-            cap('network', '🌐', '連網', '啟動時會從網路下載程式。', [f'從套件庫下載 {pkg}'])
-            if not _pkg_pinned(exe, pkg):
-                finding('版本沒鎖定，會自動換成最新版', f'每次啟動都會下載 {pkg} 的最新版。作者（或盜用作者帳號的人）發佈新版時，'
-                        '你的電腦會直接執行新版，中間沒有人檢查。',
-                        f'把版本寫死，例如 {pkg}@1.2.3（Python 套件寫成 {pkg}==1.2.3），想更新時再手動改。', 'MEDIUM',
-                        'MCP-UNPINNED', shown)
+    pkg = _download(exe, args)
+    if pkg and _git_source(pkg):
+        cap('install', '📦', '安裝套件', '每次啟動時會從 GitHub 下載程式碼來執行。', [pkg])
+        cap('network', '🌐', '連網', '啟動時會從網路下載程式。', [f'從 {pkg} 下載'])
+        if not _git_pinned(pkg):
+            finding('每次啟動都抓 GitHub 上最新的程式碼', f'它直接從 {pkg} 下載程式，沒有經過套件庫，也沒有指定版本。'
+                    '作者推上去的任何改動（或帳號被盜後別人推的改動），你下次啟動時就會執行，中間沒有人檢查。',
+                    '沒在用就關掉；要用的話，請懂的人把它固定在某個版本（網址後面加 @版本號）。', 'MEDIUM', 'MCP-GIT-SOURCE', shown)
+    elif pkg:
+        cap('install', '📦', '安裝套件', '每次啟動時會從網路下載套件來執行。', [f'{exe} {pkg}'])
+        cap('network', '🌐', '連網', '啟動時會從網路下載程式。', [f'從套件庫下載 {pkg}'])
+        if not _pkg_pinned(exe, pkg):
+            finding('版本沒鎖定，會自動換成最新版', f'每次啟動都會下載 {pkg} 的最新版。作者（或盜用作者帳號的人）發佈新版時，'
+                    '你的電腦會直接執行新版，中間沒有人檢查。',
+                    f'把版本寫死，例如 {pkg}@1.2.3（Python 套件寫成 {pkg}==1.2.3），想更新時再手動改。', 'MEDIUM',
+                    'MCP-UNPINNED', shown,
+                    calm='這是大公司或 MCP 官方發佈的套件，被動手腳的機會很低；想更保險再鎖定版本。' if WELL_KNOWN.match(pkg) else '')
+    # chat apps: other people's messages reach Claude
+    plugin = where.split('：', 1)[-1].lower() if where.startswith('Claude Code 外掛：') else ''
+    app = MESSAGING.get(name.lower()) or MESSAGING.get(plugin)
+    if app:
+        extra = {'iMessage': '它也讀得到你的簡訊紀錄。', '測試用聊天室': '這是官方拿來測試的假聊天室，一般人用不到。'}.get(app, '')
+        cap('inbound', '📨', '接收外部訊息', f'會把 {app} 收到的訊息交給 Claude。', [f'{app} 的訊息'])
+        finding('會把別人傳來的訊息交給 Claude', f'這個外掛會把 {app} 收到的訊息轉給 Claude。別人傳來的文字，可能被 Claude 當成指令照做，'
+                f'例如讀你的檔案或把東西傳出去。{extra}',
+                '沒在用就關掉；要用的話，只讓你信任的人傳訊息給它，並留意 Claude 接下來要做的事。', 'MEDIUM', 'MCP-INBOUND-MESSAGES',
+                shown or url)
     if exe == 'docker':
         joined = ' '.join(args)
         image = next((a for a in reversed(args) if not a.startswith('-') and ('/' in a or ':' in a)), '')
@@ -205,7 +271,8 @@ def inspect(name, where, cfg):
         finding('用管理員權限執行', 'sudo 讓這個伺服器用最高權限執行，可以修改整台電腦。', '一般 MCP 伺服器不需要管理員權限。',
                 'HIGH', 'MCP-SUDO', shown)
     # which folders it is handed
-    paths = [a for a in args if a.startswith(('/', '~', '$HOME', '${HOME}')) or re.match(r'^[A-Za-z]:\\', a)]
+    paths = [a for a in args if (a.startswith(('/', '~', '$HOME', '${HOME}')) or re.match(r'^[A-Za-z]:\\', a))
+             and not CODE_FILE.search(a)]          # the program it runs is not a folder it is handed
     if paths:
         cap('write', '📁', '可以存取的資料夾', '這些資料夾交給了這個伺服器，它通常可以讀取、也可能可以修改裡面的檔案。', paths)
         for p in paths:
@@ -225,7 +292,7 @@ def inspect(name, where, cfg):
         finding('金鑰直接寫在設定檔裡', '金鑰以明文存在設定檔裡，設定檔被備份、分享或被其他程式讀到時，金鑰就跟著外流。',
                 '這不代表這個伺服器有問題，是保管方式的提醒。可以的話改用環境變數或系統鑰匙圈。', 'MEDIUM', 'MCP-PLAINTEXT-SECRET',
                 '\n'.join(leaked))
-    severities = {f.severity for f in findings}
+    severities = {f.severity for f in findings if not f.calm}
     verdict = 'DO_NOT_INSTALL' if 'HIGH' in severities else 'CAUTION' if 'MEDIUM' in severities else 'SAFE'
     how = f'連線網址：{url}' if url else f'執行指令：{shown}'
     result = SkillResult(name=name, path=where, kind='mcp',

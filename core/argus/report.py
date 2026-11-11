@@ -153,7 +153,7 @@ def claude_text(r):
                      + (f'，沒有完成：{o.error}' if o.error else ''))
     for n, f in enumerate(r.findings, 1):
         lines.append(f'{n}. [{scanner_name(f.scanner)} / {f.severity}] {f.category or f.title} / 規則 {f.rule} — '
-                     f'{f.file} 第 {f.line or "?"} 行' + (f'（報告的規則判斷：多半不用擔心，{f.calm}）' if f.calm else '')
+                     + f.file + (f' 第 {f.line} 行' if f.line else '') + (f'（報告的規則判斷：多半不用擔心，{f.calm}）' if f.calm else '')
                      + ('（使用者之前看過，當時就有）' if f.known else ''))
         if f.detail:
             lines.append(f'   說明：{f.detail}')

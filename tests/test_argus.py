@@ -541,6 +541,52 @@ class Mcp(unittest.TestCase):
         shown = json.dumps([c['evidence'] for c in r['key'].capabilities], ensure_ascii=False)
         self.assertNotIn('0123456789abcdef', shown)                  # the key itself never reaches the report
 
+    def test_real_world_setups(self):
+        """From a real Mac: plugins that run their own code, a local script, official packages, a GitHub source, chat apps."""
+        home = Path(tempfile.mkdtemp())
+        (home / '.cursor').mkdir()
+        (home / '.cursor' / 'mcp.json').write_text(json.dumps({'mcpServers': {'TalkToFigma': {
+            'command': 'bun', 'args': ['run', '/Users/me/Documents/talk-to-figma/src/server.ts']}}}))
+        plugin_run = {'command': 'bun', 'args': ['run', '--cwd', '${CLAUDE_PLUGIN_ROOT}', '--shell=bun', '--silent', 'start']}
+        for plugin, servers in {
+            'discord': {'discord': plugin_run}, 'imessage': {'imessage': plugin_run},
+            'firebase': {'firebase': {'command': 'npx', 'args': ['-y', 'firebase-tools@latest', 'mcp']}},
+            'playwright': {'playwright': {'command': 'npx', 'args': ['@playwright/mcp@latest']}},
+            'serena': {'serena': {'command': 'uvx', 'args': ['--from', 'git+https://github.com/oraios/serena',
+                                                             'serena', 'start-mcp-server']}},
+            'pinned-git': {'pinned-git': {'command': 'uvx', 'args': ['--from', 'git+https://github.com/o/r@v1.2.0', 'r']}},
+        }.items():
+            d = home / '.claude' / 'plugins' / plugin
+            d.mkdir(parents=True)
+            (d / '.mcp.json').write_text(json.dumps({'mcpServers': servers}))
+        project = home / 'design-agent'
+        project.mkdir()
+        (project / '.mcp.json').write_text(json.dumps({'mcpServers': {'radar': {'command': 'node', 'args': ['r.js']}}}))
+        (home / '.claude.json').write_text(json.dumps({'projects': {str(project): {'mcpServers': {
+            'radar': {'command': 'node', 'args': [str(project / 'r.js')]}}}}}))
+        desk = home / 'desk'
+        desk.mkdir()
+        found = mcp.inspect_all(home=home, desktop=desk)
+        r = {x.name: x for x in found}
+        caps = lambda x: sorted(c['id'] for c in r[x].capabilities)
+        self.assertEqual(self.rules(r['TalkToFigma']), [])           # runs a script on this computer, nothing to download
+        self.assertEqual(caps('TalkToFigma'), ['autorun', 'exec'])
+        self.assertEqual(self.rules(r['discord']), ['MCP-INBOUND-MESSAGES'])
+        self.assertEqual(caps('discord'), ['autorun', 'exec', 'inbound'])
+        self.assertIn('簡訊', r['imessage'].findings[0].what)
+        for name in ('firebase', 'playwright'):                      # official packages: noted, but nothing to worry about
+            self.assertEqual(self.rules(r[name]), ['MCP-UNPINNED'])
+            self.assertTrue(r[name].findings[0].calm)
+            self.assertEqual(r[name].verdict, 'SAFE')
+        self.assertEqual(self.rules(r['serena']), ['MCP-GIT-SOURCE'])
+        self.assertEqual(r['serena'].verdict, 'CAUTION')
+        self.assertEqual(self.rules(r['pinned-git']), [])
+        radar = [x for x in found if x.name == 'radar']               # local setting wins over the project's .mcp.json
+        self.assertEqual(len(radar), 1)
+        self.assertIn('.mcp.json 也有同名設定', radar[0].path)
+        page = report.claude_text(r['discord'])
+        self.assertNotIn('第 ? 行', page)
+
     def test_same_server_in_two_places_listed_once(self):
         cfg = {'command': 'npx', 'args': ['-y', 'x@1.0.0']}
         self.assertEqual(len(self.run_on({'x': cfg}, desktop={'x': cfg})), 1)
