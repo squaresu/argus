@@ -62,7 +62,7 @@ try { Make-Shortcuts } catch {}
 # Argus's own files only (the folder this launcher sits in)
 try { Get-ChildItem -Path (Split-Path $HERE) -Recurse -File | Unblock-File } catch {}
 
-# 1. already running? bring its page back, unless it's an older Argus still running from before an update
+# 1. already running? bring its page back, unless it's another copy or version of Argus, or its files have gone
 $VERSION = ((Select-String -Path (Join-Path $HERE 'core\argus\__init__.py') -Pattern "^VERSION = '(.+)'").Matches[0].Groups[1].Value)
 $urlFile = Join-Path $STATE 'url'
 if (Test-Path $urlFile) {
@@ -70,7 +70,9 @@ if (Test-Path $urlFile) {
   $base = $url -replace '/\?.*$', ''
   try {
     $ping = Invoke-RestMethod -Uri "$base/api/ping" -TimeoutSec 2
-    if ($ping.version -eq $VERSION) { Start-Process $url; exit 0 }
+    # reuse it only if it's this copy and version of Argus and its files are still there
+    $where = (Resolve-Path (Join-Path $HERE 'core\argus')).Path
+    if ($ping.version -eq $VERSION -and $ping.where -eq $where -and $ping.ok) { Start-Process $url; exit 0 }
     Invoke-RestMethod -Method Post -Uri "$base/api/quit" -Headers @{ 'X-Argus-Token' = ($url -replace '^.*t=', '') } -TimeoutSec 2 | Out-Null
     Start-Sleep -Seconds 1
   } catch {}

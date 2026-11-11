@@ -19,14 +19,24 @@ say_dialog() {   # message [buttons...]: show a dialog, print the button pressed
 note() { osascript -e "display notification \"$1\" with title \"$APP\"" >/dev/null 2>&1; }
 fail() { osascript -e "display alert \"$APP\" message \"$1\" as critical" >/dev/null 2>&1; exit 1; }
 
-# 1. already running? bring its page back, unless it's an older Argus still running from before an update
+# 0. macOS runs an App opened straight from where it was downloaded from a temporary read-only copy (App
+#    Translocation). That copy vanishes once the App is moved or updated, leaving a running Argus without its files.
+case "$HERE" in
+  */AppTranslocation/*)
+    ans=$(say_dialog "請先把 Argus 拖到「應用程式」資料夾，再從那裡打開。\n\n直接從「下載項目」打開時，macOS 會用一份暫時的副本執行，之後搬動或更新 Argus 就會出問題。" "打開「應用程式」資料夾" "取消")
+    [ "$ans" = "打開「應用程式」資料夾" ] && open /Applications
+    exit 0 ;;
+esac
+
+# 1. already running? bring its page back, unless it's another copy or version of Argus, or its files have gone
 VERSION="$(sed -n "s/^VERSION = '\(.*\)'/\1/p" "$HERE/core/argus/__init__.py")"
+WHERE="$(cd "$HERE/core/argus" && pwd -P)"
 if [ -s "$STATE/url" ]; then
   url="$(cat "$STATE/url")"
   ping="$(curl -fs --max-time 2 "${url%%/\?*}/api/ping" 2>/dev/null)"
   if [ -n "$ping" ]; then
     case "$ping" in
-      *"\"version\": \"$VERSION\""*) open "$url"; exit 0 ;;
+      *"\"version\": \"$VERSION\""*"\"where\": \"$WHERE\""*"\"ok\": true"*) open "$url"; exit 0 ;;
     esac
     curl -fs --max-time 2 -X POST -H "X-Argus-Token: ${url##*t=}" "${url%%/\?*}/api/quit" >/dev/null 2>&1
     sleep 1

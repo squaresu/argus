@@ -20,6 +20,10 @@ from . import (COPYRIGHT, DISCLAIMER, DISCLAIMER_SHORT, LICENSE, NAME, TAGLINE, 
                targets, tools, updates)
 
 UI = Path(__file__).parent / 'ui'
+MOVED_PAGE = ('<!doctype html><meta charset="utf-8"><title>Argus</title>'
+              '<body style="font:16px/1.7 -apple-system,\'PingFang TC\',\'Microsoft JhengHei UI\',sans-serif;max-width:560px;margin:18vh auto;padding:0 20px">'
+              '<h2>Argus 需要重新打開</h2><p>Argus 的檔案被搬動或換成新版了，這個還在執行的舊 Argus 已經自動結束。</p>'
+              '<p>請關掉這個分頁，再<b>從「應用程式」資料夾</b>重新打開 Argus（Windows：從開始功能表或桌面的捷徑）。</p></body>')
 TOKEN = secrets.token_urlsafe(24)
 IDLE_SECONDS = 150
 _last_seen = time.time()
@@ -102,13 +106,20 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         global _last_seen
         path = urlparse(self.path).path
-        if path == '/api/ping':   # lets the launcher know Argus is already running
-            return self.send(200, {'app': NAME, 'version': VERSION})
+        if path == '/api/ping':   # lets the launcher know Argus is already running, from where, and whether it still works
+            return self.send(200, {'app': NAME, 'version': VERSION, 'where': str(Path(__file__).resolve().parent),
+                                   'ok': (UI / 'index.html').is_file()})
         if not self.allowed():
             return self.send(403, {'error': '請從 Argus App 打開這個頁面。'})
         _last_seen = time.time()
         if path == '/':
-            page = (UI / 'index.html').read_text(encoding='utf-8').replace('__TOKEN__', TOKEN)
+            index = UI / 'index.html'
+            if not index.is_file():
+                # the App was moved or replaced while this copy ran (e.g. a macOS temporary copy that went away):
+                # say so and stop, so the next double-click starts a fresh Argus
+                threading.Timer(1, self.server.shutdown).start()
+                return self.send(503, MOVED_PAGE, 'text/html; charset=utf-8')
+            page = index.read_text(encoding='utf-8').replace('__TOKEN__', TOKEN)
             return self.send(200, page, 'text/html; charset=utf-8')
         if path.startswith('/ui/'):
             f = (UI / path[4:]).resolve()
