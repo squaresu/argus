@@ -1412,16 +1412,28 @@ class QAFixes(unittest.TestCase):
 
 class Translations(unittest.TestCase):
     def test_every_sentence_is_marked_and_translated(self):
+        """Argus 的翻譯是事先翻好的固定語句（core/argus/i18n/en.json、ja.json、ko.json），執行時只查表，不連網、不用 AI。
+        改了或新增使用者看得到的文字，就要同時補三種語言的翻譯；這個測試會列出漏掉的句子。"""
         sys.path.insert(0, str(ROOT / 'tests'))
         import i18n_check
         sources, unmarked, shadow = i18n_check.all_sources()
-        self.assertEqual(shadow, [])
-        self.assertEqual(unmarked, [])
+        how = ('\n\n怎麼修：執行 python3 tests/i18n_check.py --sync，它會把新句子加進 core/argus/i18n/ 的三個檔案'
+               '（值是空的 ""），再把英文、日文、韓文的翻譯填進去。詳細說明見 docs/新增掃描工具.md 的「翻譯」。')
+        if shadow:
+            self.fail('這些地方把 _ 當成變數用，會蓋掉翻譯函式 _()，請改個名字：\n  ' + '\n  '.join(shadow))
+        if unmarked:
+            self.fail('這些中文沒有標記成要翻譯（Python 用 _()、網頁的 JavaScript 用 t()；'
+                      '不需要翻譯的在該行結尾加註解 i18n: keep）：\n  ' + '\n  '.join(unmarked[:40]))
         from argus import i18n
         for code in ('en', 'ja', 'ko'):
             cat = i18n.catalog(code)
-            self.assertEqual([s for s in sources if not cat.get(s)], [], code)
-            self.assertEqual([(s, w) for s, v in cat.items() if s in sources and (w := i18n_check.check_entry(s, v))], [], code)
+            missing = [f'{sources[s]}  {s[:60]!r}' for s in sources if not cat.get(s)]
+            if missing:
+                self.fail(f'{i18n.LANGS[code]}（{code}.json）有 {len(missing)} 句還沒翻譯：\n  ' + '\n  '.join(missing[:40]) + how)
+            broken = [f'{s[:60]!r}：{w}' for s, v in cat.items() if s in sources and (w := i18n_check.check_entry(s, v))]
+            if broken:
+                self.fail(f'{i18n.LANGS[code]}（{code}.json）有 {len(broken)} 句翻譯格式不對'
+                          '（{{名稱}} 這類代入的位置或 HTML 標記要跟原文一樣）：\n  ' + '\n  '.join(broken[:40]))
 
     def test_lookup(self):
         from argus import i18n
