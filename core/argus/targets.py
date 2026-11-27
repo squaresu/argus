@@ -21,9 +21,26 @@ class TargetError(Exception):
 
 
 def claude_roots():
-    """Where this computer's Claude skills live: ~/.claude/skills and each installed, switched-on plugin.
-    (~/.claude/plugins also holds every marketplace's whole catalog; those plugins are only on offer.)"""
-    return [tools.HOME / '.claude' / 'skills'] + [folder for _, folder in installed_plugins()]
+    """Where this computer's Claude skills live: ~/.claude/skills, and the skill folders of each installed,
+    switched-on plugin. (~/.claude/plugins also holds every marketplace's whole catalog; those plugins are only
+    on offer.)"""
+    return [tools.HOME / '.claude' / 'skills'] + [r for _, folder in installed_plugins() for r in plugin_skill_roots(folder)]
+
+
+def plugin_skill_roots(folder: Path):
+    """The folders Claude Code loads a plugin's skills from: those its plugin.json names under "skills", or
+    else skills/. Other folders in a plugin (an alternative skill set, examples, tests) are never loaded, so
+    they aren't scanned either."""
+    manifest = _load_json(folder / '.claude-plugin' / 'plugin.json') or _load_json(folder / 'plugin.json') or {}
+    named = manifest.get('skills') if isinstance(manifest, dict) else None
+    paths = [named] if isinstance(named, str) else [p for p in named if isinstance(p, str)] if isinstance(named, list) else []
+    roots = []
+    base = folder.resolve()
+    for p in paths:
+        root = (folder / p).resolve()
+        if root.is_relative_to(base):          # a plugin can only point inside itself
+            roots.append(root)
+    return roots or [folder / 'skills']
 
 
 def claude_skills():
@@ -68,6 +85,8 @@ def plugins_with_labels(home: Path | None = None):
         latest = {}   # cache/<marketplace>/<plugin>/<version>: older versions stay behind, keep the newest
         for f in sorted((root / 'cache').rglob('plugin.json'))[:200]:
             folder = f.parent.parent if f.parent.name == '.claude-plugin' else f.parent
+            if (folder / '.orphaned_at').exists():   # an old version an update replaced; Claude Code no longer loads it
+                continue
             try:
                 age = folder.stat().st_mtime
             except OSError:

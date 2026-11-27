@@ -1075,3 +1075,49 @@ class DuplicateSkills(unittest.TestCase):
         page = report.render('t', [a, b], scanners.all_scanners()[:1], {}, installed=True)
         self.assertIn('有 1 個技能裝了不只一份', page)
         self.assertIn('/plugin', report.claude_all([a, b], True, '個技能'))
+
+
+class PluginSkillFolders(unittest.TestCase):
+    """Only the skill folders Claude Code loads: plugin.json's "skills", or skills/."""
+
+    def layout(self, home, manifest=None):
+        plugin = home / '.claude' / 'plugins' / 'cache' / 'claude-plugins-official' / 'figma' / '2.2.211'
+        old = plugin.parent / '2.2.157'
+        for d in (plugin / 'skills' / 'figma-use', plugin / 'skills-figquery' / 'figma-use',
+                  old / 'skills' / 'figma-use', plugin / 'custom' / 'figma-use'):
+            d.mkdir(parents=True)
+            (d / 'SKILL.md').write_text('---\nname: figma-use\n---\n')
+        (old / '.orphaned_at').write_text('2026-11-19T14:53')
+        if manifest is not None:
+            (plugin / '.claude-plugin').mkdir()
+            (plugin / '.claude-plugin' / 'plugin.json').write_text(json.dumps(manifest))
+        return plugin, old
+
+    def skills(self, home):
+        saved = tools.HOME
+        try:
+            tools.HOME = home
+            return targets.claude_skills()
+        finally:
+            tools.HOME = saved
+
+    def test_like_the_real_figma_plugin(self):
+        home = Path(tempfile.mkdtemp())
+        plugin, _ = self.layout(home)
+        (home / '.claude' / 'plugins' / 'installed_plugins.json').write_text(json.dumps({'version': 2, 'plugins': {
+            'figma@claude-plugins-official': [{'installPath': str(plugin), 'version': '2.2.211'}]}}))
+        self.assertEqual(self.skills(home), [plugin / 'skills' / 'figma-use'])   # not skills-figquery, not 2.2.157
+
+    def test_plugin_names_its_skill_folder(self):
+        home = Path(tempfile.mkdtemp())
+        plugin, _ = self.layout(home, manifest={'name': 'figma', 'skills': './custom'})
+        self.assertEqual(targets.plugin_skill_roots(plugin), [(plugin / 'custom').resolve()])
+        outside, _ = self.layout(Path(tempfile.mkdtemp()), manifest={'name': 'figma', 'skills': '../../..'})
+        self.assertEqual(targets.plugin_skill_roots(outside), [outside / 'skills'])   # can't point outside itself
+
+    def test_no_record_skips_orphaned_versions(self):
+        home = Path(tempfile.mkdtemp())
+        plugin, old = self.layout(home, manifest={'name': 'figma'})
+        (old / '.claude-plugin').mkdir()
+        (old / '.claude-plugin' / 'plugin.json').write_text('{"name": "figma"}')
+        self.assertEqual([f for _, f in targets.installed_plugins(home)], [plugin])
