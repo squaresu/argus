@@ -329,6 +329,7 @@ def install_all(scanner_ids, on_checked=None):
 
     def work(job):
         job.total = len(todo)
+        job.ids = [s.id for s in todo]   # so a reloaded page still knows it's 全部安裝
         failed = []
         for n, scanner in enumerate(todo, 1):
             job.target = scanner.id

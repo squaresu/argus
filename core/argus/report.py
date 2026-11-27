@@ -551,8 +551,9 @@ function copyText(text) {
   if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(text);
   const t = document.createElement('textarea');   // fallback for a report opened from a file
   t.value = text; t.style.position = 'fixed'; t.style.opacity = '0';
-  document.body.appendChild(t); t.select(); document.execCommand('copy'); t.remove();
-  return Promise.resolve();
+  document.body.appendChild(t); t.select();
+  const ok = document.execCommand('copy'); t.remove();
+  return ok ? Promise.resolve() : Promise.reject(new Error('copy'));
 }
 // 標記為已看過: only while the report is open inside Argus, which remembers it (a saved copy can't)
 const TOKEN = new URLSearchParams(location.search).get('t');
@@ -577,9 +578,13 @@ if (TOKEN && location.protocol.startsWith('http')) {
 }
 // 篩選: one kind of conclusion, and/or part of a name; the folded 可以 list opens when it has matches
 const bar = document.querySelector('.rbar');
+let showAll = () => {};
 if (bar) {
   let only = 'all';
   const find = document.getElementById('find');
+  const fold0 = document.getElementById('ok-list');
+  let foldWas = fold0 ? fold0.open : false;   // how the 可以 list was before a filter opened it
+  let filtering = false;
   const apply = () => {
     const q = find.value.trim().toLowerCase();
     let shown = 0;
@@ -588,13 +593,24 @@ if (bar) {
       sec.hidden = !ok;
       if (ok) shown++;
     });
-    const fold = document.getElementById('ok-list');
+    const fold = fold0;
+    const active = !!q || only !== 'all';
     if (fold) {
+      if (active && !filtering) foldWas = fold.open;
       const inside = [...fold.querySelectorAll('section.skill')].some(sec => !sec.hidden);
       fold.hidden = !inside;
       if (inside && (q || only === 'ok')) fold.open = true;
+      if (!active && filtering) fold.open = foldWas;   // filter cleared: fold it back the way it was
     }
+    filtering = active;
     document.getElementById('no-match').hidden = shown > 0;
+    bar.classList.toggle('filtering', active);
+  };
+  showAll = () => {   // back to every skill: before printing, or to jump to a card the filter hides
+    if (!filtering) return;
+    only = 'all'; find.value = '';
+    bar.querySelectorAll('button[data-f]').forEach(x => x.setAttribute('aria-pressed', String(x.dataset.f === 'all')));
+    apply();
   };
   bar.addEventListener('click', ev => {
     const b = ev.target.closest('button[data-f]');
@@ -608,22 +624,24 @@ if (bar) {
 // printing or saving as PDF: everything open, then back as it was
 let closed = [];
 addEventListener('beforeprint', () => {
+  showAll();   // a printout has every skill, not only the ones a filter left
   closed = [...document.querySelectorAll('details:not([open])')];
   closed.forEach(d => d.open = true);
 });
 addEventListener('afterprint', () => { closed.forEach(d => d.open = false); closed = []; });
 document.querySelectorAll('a[href^="#skill-"]').forEach(a => a.addEventListener('click', () => {
   const card = document.querySelector(a.getAttribute('href'));
+  if (card && card.hidden) showAll();
   const fold = card && card.closest('details');
   if (fold) fold.open = true;
 }));
 document.querySelectorAll('button.ask').forEach(b => b.addEventListener('click', () => {
   const one = b.dataset.skill;
   const body = one !== undefined ? ASK.skills[+one] : (ASK.all || ASK.skills.join('\\n'));
-  const label = b.textContent;
+  b.dataset.label = b.dataset.label || b.textContent;   // the button's own words, whatever it shows now
+  const back = () => { clearTimeout(b.timer); b.timer = setTimeout(() => { b.textContent = b.dataset.label; }, 3000); };
   copyText(ASK.intro + body).then(() => {
-    b.textContent = '已複製，貼到 Claude 對話裡就好 ✓';
-    setTimeout(() => { b.textContent = label; }, 3000);
-  }, () => { b.textContent = '複製失敗，請再按一次'; });
+    b.textContent = '已複製，貼到 Claude 對話裡就好 ✓'; back();
+  }, () => { b.textContent = '複製失敗，請再按一次'; back(); });
 }));
 '''

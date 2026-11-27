@@ -75,7 +75,21 @@ function renderTarget() {
   validate();
 }
 
-function renderScanners() {
+// a list rebuilt from new state keeps keyboard focus on the same control (or its row's nearest one)
+function keepFocus(box, build) {
+  const el = document.activeElement;
+  const attrs = ['data-id', 'data-install', 'data-del', 'data-file'];
+  const at = el && box.contains(el) ? attrs.find((a) => el.hasAttribute(a)) : null;
+  const value = at ? el.getAttribute(at) : null;
+  build();
+  if (at) {
+    const again = [...box.querySelectorAll(`[${at}]`)].find((x) => x.getAttribute(at) === value);
+    (again || box.querySelector('button:not([disabled]), input, [tabindex="0"]'))?.focus();
+  }
+}
+
+function renderScanners() { keepFocus($('#scanners'), drawScanners); }
+function drawScanners() {
   const list = state.scanners;
   if (checked === null) checked = new Set(list.filter((s) => s.default_on).map((s) => s.id));
   $('#scanners').innerHTML = list.map((s) => {
@@ -121,12 +135,15 @@ function renderToolsCard() {
   $('#tools-summary-link').textContent = folded ? '調整' : '收起';
 }
 
-async function installAll() {
+function installAll() {
+  if (installing) return;
   const ids = $('#install-all').dataset.ids.split(',').filter(Boolean);
-  try {
-    const job = await api('/api/install-all', { ids });
-    watchInstall(job.target, job.id, ids);
-  } catch (err) { showError(err.message); }
+  return once(async () => {
+    try {
+      const job = await api('/api/install-all', { ids });
+      watchInstall(job.target, job.id, ids);
+    } catch (err) { showError(err.message); }
+  });
 }
 
 // "有新版本" notice; 稍後再說 hides it for that version only
@@ -248,7 +265,15 @@ function historyLine(r) {
 }
 
 let historyAll = false;
+const historyHome = document.createComment('history card');   // where the card sits with few reports
+$('#history-card').after(historyHome);
 function renderHistory() {
+  const had = $('#history').contains(document.activeElement);
+  keepFocus($('#history'), drawHistory);
+  // the report just deleted had focus: go to the next one, or the list's card
+  if (had && !$('#history').contains(document.activeElement)) ($('#history li') || $('#start'))?.focus();
+}
+function drawHistory() {
   const h = state.history || [];
   $('#history-card').hidden = !h.length;
   document.body.classList.toggle('returning', h.length > 0);
@@ -256,6 +281,7 @@ function renderHistory() {
   const upFront = h.length >= 3;
   const card = $('#history-card');
   if (upFront && card.nextElementSibling !== $('#targets-card')) $('#targets-card').before(card);
+  if (!upFront && card.nextSibling !== historyHome) historyHome.before(card);
   const shown = upFront && !historyAll ? h.slice(0, 3) : h.slice(0, 12);
   $('#history-more').hidden = !upFront || h.length <= 3;
   $('#history-more').textContent = historyAll ? '收起' : `看全部 ${Math.min(h.length, 12)} 份`;
@@ -269,7 +295,7 @@ function renderHistory() {
     const source = sourceName(r.title);
     // an older report has no conclusion line: its source is the title, so don't say it twice
     const sub = [line === source ? '' : source, r.when, `${r.skills} ${unit}`].filter(Boolean).join(' · ');
-    return `<li data-file="${esc(r.file)}" tabindex="0" title="${esc(r.title)}">
+    return `<li data-file="${esc(r.file)}" tabindex="0" role="button" aria-label="打開報告：${esc(line)}，${esc(r.when)}" title="${esc(r.title)}">
       <div class="h-main"><span class="h-title">${esc(line)}</span>
         <span class="h-when">${esc(sub)}</span></div>
       <span class="dots">${dots}</span>
@@ -314,7 +340,10 @@ function validate() {
 }
 
 async function loadState() {
-  state = await api('/api/state');
+  const n = (loadState.seq = (loadState.seq || 0) + 1);
+  const fresh = await api('/api/state');
+  if (n !== loadState.seq) return;   // a newer request is on its way: an older answer mustn't overwrite it
+  state = fresh;
   $('#copyright').textContent = state.app.copyright;
   // wording for this system: Finder or 檔案總管, and which manual-update steps to show
   const win = state.app.platform === 'win';
@@ -330,7 +359,7 @@ async function loadState() {
   renderReminder();
   renderCompanion();
   // an install that was going on when the page was (re)loaded: keep showing it next to its tool
-  if (state.installing && !installing) watchInstall(state.installing.id, state.installing.job);
+  if (state.installing && !installing) watchInstall(state.installing.id, state.installing.job, state.installing.ids);
   renderScanners();
   renderHistory();
   if (state.running && !following) follow(state.running);
@@ -377,6 +406,7 @@ async function follow(jobId) {
     renderItems(job.items || []);
     if (job.status !== 'running') {
       following = null;
+      if ($('#confirm').open) $('#confirm').close();   // the 停止檢查？ question no longer applies
       await loadState().catch(() => {});
       if (job.status === 'done' && job.result) { openReport(job.result); return; }
       $('#p-back').hidden = false;   // never leave the person on this screen without a way back
@@ -387,11 +417,22 @@ async function follow(jobId) {
   }
 }
 
-async function install(id) {
-  try {
-    const job = await api('/api/install', { id });
-    watchInstall(id, job.id);
-  } catch (err) { showError(err.message); }
+// one request at a time: a second click while the first is on its way would only get 「已經有工作在進行」
+let sending = false;
+async function once(fn) {
+  if (sending) return;
+  sending = true;
+  try { await fn(); } finally { sending = false; }
+}
+
+function install(id) {
+  if (installing) return;
+  return once(async () => {
+    try {
+      const job = await api('/api/install', { id });
+      watchInstall(id, job.id);
+    } catch (err) { showError(err.message); }
+  });
 }
 
 // follow an install next to its tool; the server has the tool's status ready by the time the job ends
@@ -415,13 +456,17 @@ async function watchInstall(id, jobId, ids = [id]) {
   }
 }
 
-async function start() {
+function start() {
+  if (following) return;
   const k = kind();
   const value = k === 'github' ? $('#url').value.trim() : picked[k] || '';
-  try {
-    const job = await api('/api/scan', { kind: k, value, scanners: [...checked] });
-    follow(job.id);
-  } catch (err) { showError(err.message); }
+  return once(async () => {
+    $('#start').disabled = true;
+    try {
+      const job = await api('/api/scan', { kind: k, value, scanners: [...checked] });
+      follow(job.id);
+    } catch (err) { showError(err.message); validate(); }
+  });
 }
 
 function openReport(file) {
@@ -568,8 +613,10 @@ $('#error-copy').addEventListener('click', async () => {
 });
 // 4. 停止檢查: what finished becomes the report
 $('#p-stop').addEventListener('click', async () => {
-  if (!following) return;
+  const id = following;
+  if (!id) return;
   if (!(await ask('已經檢查完的技能會做成報告；還沒檢查的就不檢查了。', { title: '停止檢查？', ok: '停止', danger: true }))) return;
+  if (following !== id) return;   // it finished while the question was open
   $('#p-stop').disabled = true;
-  try { await api('/api/cancel', { id: following }); } catch (err) { showError(err.message); $('#p-stop').disabled = false; }
+  try { await api('/api/cancel', { id }); } catch (err) { showError(err.message); $('#p-stop').disabled = false; }
 });

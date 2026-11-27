@@ -97,7 +97,8 @@ def state():
         'history': jobs.history(),
         'running': next((j.id for j in running if j.kind == 'scan'), None),
         'updating': next((j.id for j in running if j.kind == 'update'), None),
-        'installing': next(({'id': j.target, 'job': j.id} for j in running if j.kind == 'install'), None),
+        'installing': next(({'id': j.target, 'job': j.id, 'ids': getattr(j, 'ids', None) or [j.target]}
+                            for j in running if j.kind == 'install'), None),
         'claude_found': any(r.exists() for r in targets.claude_roots()),
         'update': updates.status(),
         'reminder': reminder.status(),
