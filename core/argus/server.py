@@ -16,7 +16,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
-from . import (COPYRIGHT, DISCLAIMER, DISCLAIMER_SHORT, LICENSE, NAME, TAGLINE, VERSION, integrations, jobs, native,
+from . import (COPYRIGHT, DISCLAIMER, DISCLAIMER_SHORT, LICENSE, NAME, TAGLINE, VERSION, i18n, integrations, jobs, native,
                reminder, scanners, targets, tools, updates)
 from .scanners.base import is_newer
 
@@ -92,6 +92,7 @@ def state():
         'app': {'name': NAME, 'tagline': TAGLINE, 'version': VERSION, 'copyright': COPYRIGHT, 'license': LICENSE,
                 'disclaimer': DISCLAIMER, 'disclaimer_short': DISCLAIMER_SHORT, 'reports': str(tools.reports_dir()),
                 'platform': 'mac' if tools.IS_MAC else 'win' if tools.IS_WIN else 'other'},
+        'lang': {'now': i18n.lang(), 'chosen': i18n.chosen(), 'system': i18n.system_lang(), 'all': i18n.LANGS},
         'scanners': [tool_info(s) for s in scanners.all_scanners()],
         'newest_checked': _newest_done,
         'history': jobs.history(),
@@ -161,7 +162,11 @@ class Handler(BaseHTTPRequestHandler):
                 # say so and stop, so the next double-click starts a fresh Argus
                 threading.Timer(1, self.server.shutdown).start()
                 return self.send(503, MOVED_PAGE, 'text/html; charset=utf-8')
-            page = index.read_text(encoding='utf-8').replace('__TOKEN__', TOKEN)
+            page = i18n.translate_html(index.read_text(encoding='utf-8').replace('__TOKEN__', TOKEN))
+            # the page's own scripts look their words up here (ui/app.js: t())
+            strings = json.dumps({'lang': i18n.lang(), 'html': i18n.HTML_LANG[i18n.lang()], 'catalog': i18n.catalog()},
+                                 ensure_ascii=False).replace('<', '\\u003c')
+            page = page.replace('</head>', f'<script type="application/json" id="i18n">{strings}</script>\n</head>', 1)
             return self.send(200, page, 'text/html; charset=utf-8')
         if path.startswith('/ui/'):
             f = (UI / path[4:]).resolve()
@@ -190,6 +195,11 @@ class Handler(BaseHTTPRequestHandler):
         _last_seen = time.time()
         path, data = urlparse(self.path).path, self.body()
         try:
+            if path == '/api/lang':   # 語言: one of i18n.LANGS, or null to follow the computer; the page reloads
+                try:
+                    return self.send(200, {'lang': i18n.set_lang(data.get('lang') or None)})
+                except ValueError:
+                    return self.send(400, {'error': 'unknown language'})
             if path == '/api/pick':
                 picked = native.pick_zip() if data.get('kind') == 'zip' else native.pick_folder()
                 return self.send(200, {'path': picked})

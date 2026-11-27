@@ -12,6 +12,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / 'core'))
+os.environ['ARGUS_LANG'] = 'zh-TW'   # the tests read Argus's own (source) wording
 
 from argus import capabilities, jobs, mcp, reminder, report, reviews, scanners, server, targets, timing, tools, updates  # noqa: E402
 from argus.model import Finding, Outcome, SkillResult  # noqa: E402
@@ -1407,3 +1408,34 @@ class QAFixes(unittest.TestCase):
         finally:
             targets.download = saved
         self.assertTrue(tried[0].endswith('/archive/feature.zip'))
+
+
+class Translations(unittest.TestCase):
+    def test_every_sentence_is_marked_and_translated(self):
+        sys.path.insert(0, str(ROOT / 'tests'))
+        import i18n_check
+        sources, unmarked, shadow = i18n_check.all_sources()
+        self.assertEqual(shadow, [])
+        self.assertEqual(unmarked, [])
+        from argus import i18n
+        for code in ('en', 'ja', 'ko'):
+            cat = i18n.catalog(code)
+            self.assertEqual([s for s in sources if not cat.get(s)], [], code)
+            self.assertEqual([(s, w) for s, v in cat.items() if s in sources and (w := i18n_check.check_entry(s, v))], [], code)
+
+    def test_lookup(self):
+        from argus import i18n
+        cat = i18n.catalog('en')
+        saved = dict(cat)
+        cat.update({'有 {n} 項': {'one': '{n} item', 'other': '{n} items'}, '壞的 {x}': 'broken {y}'})
+        i18n._lang = 'en'
+        try:
+            self.assertEqual(i18n._('有 {n} 項', n=1), '1 item')
+            self.assertEqual(i18n._('有 {n} 項', n=3), '3 items')
+            self.assertEqual(i18n._('壞的 {x}', x=1), '壞的 1')      # a broken translation falls back
+            self.assertEqual(i18n._('沒翻譯的'), '沒翻譯的')
+        finally:
+            cat.clear(); cat.update(saved); i18n._lang = None
+        self.assertEqual(i18n.match('zh-Hans-CN'), 'zh-TW')
+        self.assertEqual(i18n.match('ja_JP.UTF-8'), 'ja')
+        self.assertIsNone(i18n.match('fr-FR'))
