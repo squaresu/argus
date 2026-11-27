@@ -163,17 +163,31 @@ input[type=url]:focus { outline: none; border-color: var(--pick-line); }
 .progress-card details { text-align: left; max-width: 640px; margin: 18px auto 0; }
 .progress-card pre { background: var(--soft); border-radius: 10px; padding: 10px 12px; font-size: 12px; max-height: 240px; overflow: auto; white-space: pre-wrap; }
 .radar { width: 84px; height: 84px; margin: 0 auto; border-radius: 22%; background: linear-gradient(180deg, var(--navy-900), var(--navy-800)); position: relative; overflow: hidden; box-shadow: 0 0 0 1px #ece8e026, 0 4px 14px #17203333; }
+/* the scan: a line glides down and up over SKILL, trailing a fading afterimage. --y is where the line is,
+   --t how long its trail is (positive going down, negative going up): longest mid-sweep, nothing at the turn.
+   The word lights up mint inside the trail and fades back once it has passed. */
+@property --y { syntax: '<percentage>'; inherits: true; initial-value: 14%; }
+@property --t { syntax: '<percentage>'; inherits: true; initial-value: 0%; }
+.radar { --y: 14%; --t: 0%; animation: scan-y 1.3s ease-in-out infinite alternate, scan-t 2.6s linear infinite; }
 .radar::before, .radar::after { content: "SKILL"; position: absolute; inset: 0; display: grid; place-items: center; font: 800 19px/1 -apple-system, "Helvetica Neue", Arial, sans-serif; letter-spacing: -.02em; }
 .radar::before { color: var(--cream); }
-/* the same word in mint, shown only above the line: it lights up as the line sweeps down over it */
-.radar::after { color: var(--mint-bright); text-shadow: 0 0 8px #96f0be99; clip-path: inset(0 0 100% 0); animation: lit 2.4s ease-in-out infinite; }
-.radar span { position: absolute; left: 10%; right: 10%; top: 14%; height: 3px; border-radius: 3px; background: var(--mint-bright); box-shadow: 0 0 10px var(--mint-bright); animation: sweep 2.4s ease-in-out infinite; }
+.radar::after { color: var(--mint-bright); text-shadow: 0 0 8px #96f0be99; z-index: 2;
+  -webkit-mask-image: linear-gradient(to bottom, transparent calc(var(--y) - max(var(--t), 0%) - 2%), #000 var(--y), transparent calc(var(--y) + 2%)),
+                      linear-gradient(to top, transparent calc(100% - var(--y) - max(var(--t) * -1, 0%) - 2%), #000 calc(100% - var(--y)), transparent calc(102% - var(--y)));
+          mask-image: linear-gradient(to bottom, transparent calc(var(--y) - max(var(--t), 0%) - 2%), #000 var(--y), transparent calc(var(--y) + 2%)),
+                      linear-gradient(to top, transparent calc(100% - var(--y) - max(var(--t) * -1, 0%) - 2%), #000 calc(100% - var(--y)), transparent calc(102% - var(--y))); }
+.radar span { position: absolute; left: 10%; right: 10%; top: var(--y); height: 3px; margin-top: -1.5px; border-radius: 3px; background: var(--mint-bright); box-shadow: 0 0 10px var(--mint-bright); z-index: 3; }
+.radar i { position: absolute; left: 10%; right: 10%; z-index: 1; pointer-events: none;
+  background: linear-gradient(var(--dir), transparent, #96f0be14 40%, #96f0be4d);
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 18%, #000 82%, transparent);
+          mask-image: linear-gradient(to right, transparent, #000 18%, #000 82%, transparent); }
+.radar .trail-down { --dir: to bottom; top: calc(var(--y) - max(var(--t), 0%)); height: max(var(--t), 0%); }
+.radar .trail-up { --dir: to top; top: var(--y); height: max(var(--t) * -1, 0%); }
+@keyframes scan-y { from { --y: 14%; } to { --y: 86%; } }
+@keyframes scan-t { 0% { --t: 0%; } 25% { --t: 34%; } 50% { --t: 0%; } 75% { --t: -34%; } 100% { --t: 0%; } }
 .spinner { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--line); border-top-color: var(--mint-ink); animation: spin .8s linear infinite; flex: none; }
 @keyframes spin { to { transform: rotate(360deg); } }
-/* down over the word, hold a moment fully lit, fade, start again */
-@keyframes sweep { 0% { top: 14%; opacity: 0; } 8% { opacity: 1; } 62% { top: 84%; opacity: 1; } 80% { top: 84%; opacity: 0; } 100% { top: 84%; opacity: 0; } }
-@keyframes lit { 0% { clip-path: inset(0 0 86% 0); opacity: 1; } 62% { clip-path: inset(0 0 16% 0); opacity: 1; } 80% { clip-path: inset(0 0 0 0); opacity: 1; } 100% { clip-path: inset(0 0 0 0); opacity: 0; } }
-@media (prefers-reduced-motion: reduce) { .radar span { animation: none; top: 50%; opacity: 1; } .radar::after { animation: none; clip-path: inset(0 0 50% 0); } .spinner { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .radar { animation: none; --y: 50%; --t: 24%; } .spinner { animation: none; } }
 
 /* report view */
 .update { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; background: var(--mint); color: var(--navy-900); border: 1px solid var(--mint-ink); border-radius: 14px; padding: 10px 14px; margin: 0 0 16px; box-shadow: var(--shadow); font-size: 14px; }
