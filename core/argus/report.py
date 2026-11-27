@@ -6,7 +6,7 @@ import json
 from datetime import datetime
 
 from . import COPYRIGHT, DISCLAIMER, NAME, VERSION, mcp, scanners, tools
-from .model import SEVERITY_ZH, VERDICT_ZH, VERDICTS
+from .model import SEVERITY_ZH, VERDICTS
 
 ORDER = {v: i for i, v in enumerate(VERDICTS + ['ERROR'])}
 HINT_SKILLS = ('掃描器只看寫法、不看用途，很容易把正常功能（轉檔、執行工具、格式規定）也標起來。「不建議安裝」不代表一定有惡意。'
@@ -73,29 +73,35 @@ def duplicates_html(results):
     return f'<div class="dup-note">{e(DUPLICATE_NOTE.format(n=n))}</div>' if n else ''
 
 
-def summary_html(results, installed, unit):
-    """The conclusion at the top of the report."""
+def summary_html(results, installed, unit, hint):
+    """The conclusion card at the top: everything needed before reading any skill."""
     if not results:
         return ''
     marks = [advice(r)[0] for r in results]
-    if len(results) == 1:
-        a, why = advice(results[0])
-        return (f'<div class="verdict-box {ADVICE_CLASS[a]}"><span class="vb-label">結論</span>'
-                f'<b class="vb-word">{advice_word(a, installed)}</b><p>{e(why)}</p></div>')
     counts = {a: marks.count(a) for a in ADVICE_ORDER}
-    head = (f'{counts["no"]} {unit}{advice_word("no", installed)}' if counts['no'] else
-            f'{counts["ask"]} {unit}先問人，其他{advice_word("ok", installed)}' if counts['ask'] else
-            f'全部{advice_word("ok", installed)}')
-    named = ''
-    for a in ('no', 'ask'):
-        items = [(i, r) for i, (r, m) in enumerate(zip(results, marks)) if m == a]
-        if items:
-            links = '、'.join(f'<a href="#skill-{i}">{e(r.name)}</a>' for i, r in items[:12])
-            more = f' 等 {len(items)} 個' if len(items) > 12 else ''
-            named += f'<p><b>{advice_word(a, installed)}：</b>{links}{more}</p>'
     a = 'no' if counts['no'] else 'ask' if counts['ask'] else 'ok'
-    return (f'<div class="verdict-box {ADVICE_CLASS[a]}"><span class="vb-label">結論</span>'
-            f'<b class="vb-word">{e(head)}</b>{named}</div>')
+    if len(results) == 1:
+        head, why = advice_word(a, installed), f'<p class="vb-why">{e(advice(results[0])[1])}</p>'
+        tally = named = ''
+    else:
+        head = (f'{counts["no"]} {unit}{advice_word("no", installed)}' if counts['no'] else
+                f'{counts["ask"]} {unit}先問人，其他{advice_word("ok", installed)}' if counts['ask'] else
+                f'全部{advice_word("ok", installed)}')
+        why = ''
+        tally = '<div class="vb-tally">' + ''.join(
+            f'<span><i class="d {ADVICE_CLASS[x]}"></i>{advice_word(x, installed)} <b>{counts[x]}</b></span>'
+            for x in ADVICE_ORDER) + '</div>'
+        named = ''
+        for x in ('no', 'ask'):
+            items = [(i, r) for i, (r, m) in enumerate(zip(results, marks)) if m == x]
+            if items:
+                links = '、'.join(f'<a href="#skill-{i}">{e(r.name)}</a>' for i, r in items[:12])
+                more = f' 等 {len(items)} 個' if len(items) > 12 else ''
+                named += f'<p class="vb-named"><b>{advice_word(x, installed)}：</b>{links}{more}</p>'
+    return (f'<section class="verdict-box {ADVICE_CLASS[a]}"><span class="vb-label">結論</span>'
+            f'<b class="vb-word">{e(head)}</b>{why}{tally}{named}'
+            f'<div class="vb-actions"><button class="ask all" type="button">複製整份報告給 Claude 判斷</button>'
+            f'<details class="how"><summary>怎麼看這份報告？</summary><p>{hint}</p></details></div></section>')
 
 
 def e(s):
@@ -208,17 +214,20 @@ def finding_html(f, flag_new=False):
     </li>'''
 
 
+# what each tool said, in neutral words: only the conclusion at the top of the card says what to do
+TOOL_SAID = {'DO_NOT_INSTALL': ('疑慮較多', 'danger'), 'CAUTION': ('有疑慮', 'caution'), 'SAFE': ('沒發現問題', 'safe'),
+             'SKIPPED': ('不適用', 'muted'), 'ERROR': ('沒掃完', 'error')}
+
+
 def skill_html(r, idx, installed=False):
-    verdict = r.verdict
     a, why = advice(r)
     label, cls = advice_word(a, installed), ADVICE_CLASS[a]
     score = next((o.score for o in r.outcomes if o.score is not None), None)
-    chips = ''.join(
-        f'<span class="chip {VERDICT_ZH.get(o.verdict, ("", "muted"))[1]}" title="{e(o.error or o.note)}">'
-        f'{e(scanner_name(o.scanner))}<i>{e(VERDICT_ZH.get(o.verdict, (o.verdict,))[0])}</i></span>'
+    said = ''.join(
+        f'<span class="said" title="{e(o.error or o.note)}"><i class="d {TOOL_SAID.get(o.verdict, ("", "muted"))[1]}"></i>'
+        f'{e(scanner_name(o.scanner))} <em>{e(TOOL_SAID.get(o.verdict, (o.verdict,))[0])}</em></span>'
         for o in r.outcomes)
-    notes = [why]
-    notes += [o.note for o in r.outcomes if o.note and o.verdict != 'SKIPPED']
+    notes = ' '.join(o.note for o in r.outcomes if o.note and o.verdict != 'SKIPPED')
     errors = ''.join(f'<p class="err">{e(scanner_name(o.scanner))} 沒有完成：{e(o.error)}</p>'
                      for o in r.outcomes if o.verdict == 'ERROR')
     reviewed = (r.change or {}).get('status') in ('reviewed', 'changed_since_review')
@@ -226,13 +235,9 @@ def skill_html(r, idx, installed=False):
     known = [f for f in r.findings if f.known]
     look = [f for f in r.findings if not f.calm and not f.known]
     calm = [f for f in r.findings if f.calm and not f.known]
-    if r.findings and not look and not known:
-        notes.append('所有發現都屬於「多半不用擔心」，看起來沒有需要特別處理的地方。')
-    elif calm:
-        notes.append(f'其中 {len(calm)} 項多半不用擔心，已經另外收起來；先看「需要看的」{len(look)} 項就好。')
     groups = ''
     if look:
-        groups += (f'<details{" open" if verdict == "DO_NOT_INSTALL" or flag_new else ""}><summary>需要看的 {len(look)} 項</summary>'
+        groups += (f'<details class="look" open><summary>需要看的 {len(look)} 項</summary>'
                    f'<ul>{"".join(group_html(g, flag_new) for g in group_findings(look))}</ul></details>')
     if calm:
         groups += (f'<details class="calm-group"><summary>多半不用擔心的 {len(calm)} 項（可能是誤判，或只是提醒）</summary>'
@@ -240,21 +245,24 @@ def skill_html(r, idx, installed=False):
     if known:
         groups += (f'<details class="calm-group"><summary>之前看過的 {len(known)} 項（你標記已看過時就有了）</summary>'
                    f'<ul>{"".join(group_html(g) for g in group_findings(known))}</ul></details>')
-    if not r.findings and verdict != 'ERROR':
-        groups = '<p class="none">沒有任何發現。</p>'
+    # 詳細資料: what each tool said, what the skill can do, the risk score, the tools' own notes
+    caps = '、'.join(c['label'] for c in r.capabilities)
+    more_label = '詳細資料' + (f'：能做的事——{caps}' if caps else '')
+    more = (f'<details class="more-info"><summary>{e(more_label)}</summary>'
+            f'{f"<p class=source>設定在：{e(r.path)}</p>" if r.kind == "mcp" else ""}'
+            f'<div class="saids"><span class="caps-label">各工具的結果</span>{said}</div>'
+            f'{capabilities_html(r.capabilities)}'
+            f'{f"<p class=note>SkillSpector 風險分數 {e(score)} / 100（分數越高，它越擔心）</p>" if score is not None else ""}'
+            f'{f"<p class=note>{e(notes)}</p>" if notes else ""}{errors}</details>')
     ask = f'<button class="ask" type="button" data-skill="{idx}">複製給 Claude 判斷</button>' if r.findings else ''
     # 標記為已看過 only works while the report is open in Argus (it needs Argus to remember it)
     review = (f'<button class="review{" on" if reviewed else ""}" type="button" data-key="{e(r.key)}" hidden>'
               f'{"✓ 已看過（按一下取消）" if reviewed else "標記為已看過"}</button>') if r.key else ''
-    source = f'<p class="source">設定在：{e(r.path)}</p>' if r.kind == 'mcp' else ''
-    return f'''<section class="skill {cls}" id="skill-{idx}">
-    <div class="sh"><h2>{e(r.name)}</h2><span class="pill {cls}">{e(label)}</span>
-      {f'<span class="score">SkillSpector 風險分數 {e(score)} / 100</span>' if score is not None else ''}</div>
-    {source}{change_html(r)}
-    {capabilities_html(r.capabilities)}
-    <div class="chips">{chips}</div>
-    <p class="note">{e(" ".join(notes))}</p>
-    {errors}{groups}<div class="actions">{ask}{review}</div>
+    return f'''<section class="skill {cls}" id="skill-{idx}" data-advice="{a}" data-name="{e(r.name.lower())}">
+    <div class="sh"><h2>{e(r.name)}</h2><span class="pill {cls}">{e(label)}</span></div>
+    <p class="why">{e(why)}</p>
+    {change_html(r)}{groups}{more}
+    <div class="actions">{ask}{review}</div>
   </section>'''
 
 
@@ -314,6 +322,18 @@ def claude_all(results, installed, unit):
     return '\n'.join(full)
 
 
+FILTER_FROM = 8   # reports with at least this many skills get the filter bar
+
+
+def filter_bar(marks, installed, unit):
+    """Sticky above the skills: show one kind of conclusion, or find a skill by name."""
+    buttons = [f'<button type="button" data-f="all" aria-pressed="true">全部 <b>{len(marks)}</b></button>']
+    buttons += [f'<button type="button" data-f="{a}" aria-pressed="false"><i class="d {ADVICE_CLASS[a]}"></i>'
+                f'{advice_word(a, installed)} <b>{marks.count(a)}</b></button>' for a in ADVICE_ORDER if marks.count(a)]
+    return (f'<nav class="rbar" aria-label="篩選"><div class="fb">{"".join(buttons)}</div>'
+            f'<input type="search" id="find" placeholder="找{unit.removeprefix("個")}名字…" aria-label="用名字找"></nav>')
+
+
 def skills_html(results, installed, unit):
     """Every skill's card. In a report of several, those that are 可以 sit folded under one line of names."""
     cards = [(skill_html(r, i, installed), advice(r)[0]) for i, r in enumerate(results)]
@@ -324,7 +344,7 @@ def skills_html(results, installed, unit):
     if not ok:
         return shown
     names = '、'.join(e(r.name) for _, r in ok[:40]) + (f' 等 {len(ok)} 個' if len(ok) > 40 else '')
-    return (shown + f'<details class="ok-list"><summary><b>{advice_word("ok", installed)}的 {len(ok)} {unit}</b>'
+    return (shown + f'<details class="ok-list" id="ok-list"><summary><b>{advice_word("ok", installed)}的 {len(ok)} {unit}</b>'
             f'<span class="ok-names">{names}</span><span class="ok-open">點開看每一個的細節</span></summary>'
             + ''.join(c for c, _ in ok) + '</details>')
 
@@ -337,8 +357,7 @@ def render(title, results, chosen, versions, when=None, installed=False):
     results = sorted(results, key=lambda r: (ADVICE_ORDER.index(advice(r)[0]), ORDER[r.verdict],
                                              -max([o.score or 0 for o in r.outcomes] or [0]), r.name))
     marks = [advice(r)[0] for r in results]
-    tiles = ''.join(f'<div class="tile {ADVICE_CLASS[a]}"><b>{marks.count(a)}</b>{advice_word(a, installed)}</div>'
-                    for a in ADVICE_ORDER) if len(results) > 1 else ''
+    bar = filter_bar(marks, installed, unit) if len(results) >= FILTER_FROM else ''
     # some tools put their own name before the version ("bandit 1.9.4"); show just the number
     used = ''.join(f'<span class="tool">{e(s.name)} <i>{e(re.sub(r"^[A-Za-z][^0-9]*?(?=[0-9])", "", versions.get(s.id, "")))}</i></span>'
                    for s in chosen)
@@ -368,11 +387,9 @@ def render(title, results, chosen, versions, when=None, installed=False):
   <p class="sub">{e(title)} · {when:%Y/%m/%d %H:%M} · 共 {len(results)} {unit}</p>
   <div class="tools">使用的工具：{used}</div>
 </header>
-{summary_html(results, installed, unit)}{duplicates_html(results)}
-{f'<div class="tiles">{tiles}</div>' if tiles else ''}
-<div class="hint"><p><b>怎麼看這份報告：</b>{HINT_MCP if is_mcp else HINT_SKILLS}</p>
-<button class="ask all" type="button">複製整份報告給 Claude 判斷</button></div>
-{skills_html(results, installed, unit)}
+{summary_html(results, installed, unit, HINT_MCP if is_mcp else HINT_SKILLS)}{duplicates_html(results)}
+{bar}<div id="skills">{skills_html(results, installed, unit)}</div>
+<p class="no-match" id="no-match" hidden>沒有符合的技能。</p>
 <footer>
   <p>由 {NAME} {VERSION} 產生 · {COPYRIGHT} · 以 MIT 授權開源。</p>
   <p>掃描引擎：{licences}。各工具僅做靜態分析，沒有把技能內容送給 AI 服務。
@@ -423,20 +440,36 @@ h1::after{content:'';display:block;width:84px;height:3px;border-radius:3px;margi
 h1{margin:0;font-size:28px;letter-spacing:.01em} .sub{color:var(--muted);margin:4px 0 10px}
 .tools{color:var(--muted);font-size:13.5px;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
 .tool{background:var(--card);border:1px solid var(--line);border-radius:999px;padding:1px 10px} .tool i{font-style:normal;opacity:.7}
-.verdict-box{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px 20px;margin:22px 0 16px;box-shadow:var(--shadow)}
+.verdict-box{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:18px 22px;margin:22px 0 16px;box-shadow:var(--shadow)}
+.vb-why{margin:2px 0 0} .vb-named{margin:6px 0 0;font-size:14.5px}
+.vb-tally{display:flex;flex-wrap:wrap;gap:6px 18px;margin:6px 0 4px;color:var(--muted);font-size:14px} .vb-tally b{color:var(--ink)}
+.d{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;vertical-align:1px;background:var(--muted)}
+.d.safe{background:var(--safe)} .d.caution{background:var(--caution)} .d.danger{background:var(--danger)} .d.error,.d.muted{background:var(--error)}
+.vb-actions{display:flex;flex-wrap:wrap;align-items:center;gap:6px 16px;margin-top:14px;padding-top:14px;border-top:1px solid var(--line)}
+.vb-actions button.ask.all{margin:0}
+details.how{margin:0} details.how summary{font-weight:600;color:var(--brand);font-size:14px} details.how[open]{flex-basis:100%}
+details.how p{margin:6px 0 0;color:var(--muted);font-size:14px}
+.rbar{position:sticky;top:0;z-index:5;display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:0 -8px 14px;padding:10px 8px;
+  background:color-mix(in srgb,var(--bg) 90%,transparent);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+.fb{display:flex;flex-wrap:wrap;gap:6px}
+.rbar button{white-space:nowrap;font:inherit;font-size:13.5px;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:999px;padding:5px 12px;cursor:pointer}
+.rbar button[aria-pressed=true]{border-color:var(--brand);box-shadow:inset 0 0 0 1px var(--brand)}
+.rbar input{margin-left:auto;font:inherit;font-size:14px;min-width:180px;flex:0 1 240px;padding:6px 12px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--ink)}
+:focus{outline:none}:focus-visible{outline:2px solid var(--brand);outline-offset:2px;border-radius:10px}
+.rbar input:focus{border-color:var(--brand)}
+.no-match{color:var(--muted);text-align:center;padding:20px}
+.why{margin:6px 0 4px;font-size:15px}
+details.look>summary{color:var(--ink)}
+.more-info{margin:10px 0 0;border-top:1px dashed var(--line);padding-top:6px}
+.more-info>summary{font-weight:600;color:var(--muted);font-size:13.5px}
+.saids{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;margin:8px 0 4px;font-size:13.5px}
+.said em{font-style:normal;color:var(--muted)}
 .verdict-box .vb-label{display:block;font-size:12.5px;color:var(--muted);letter-spacing:.06em}
 .verdict-box .vb-word{display:block;font-size:24px;line-height:1.35;margin:2px 0 4px}
 .verdict-box.safe .vb-word{color:var(--safe)} .verdict-box.caution .vb-word{color:var(--caution)} .verdict-box.danger .vb-word{color:var(--danger)}
 .verdict-box p{margin:4px 0} .verdict-box a{color:inherit}
 .dup-note{background:color-mix(in srgb,var(--caution) 12%,var(--card));border:1px solid color-mix(in srgb,var(--caution) 55%,transparent);border-radius:14px;padding:12px 16px;margin:0 0 16px;font-size:14px}
-.tiles{display:flex;gap:10px;flex-wrap:wrap;margin:0 0 16px}
-.tile{flex:1 1 120px;background:var(--card);border-radius:16px;padding:14px 18px;box-shadow:var(--shadow);color:var(--muted)}
-.tile b{display:block;font-size:30px;line-height:1.2;color:var(--ink)} .tile.safe b{color:var(--safe)} .tile.caution b{color:var(--caution)}
-.tile.danger b{color:var(--danger)} .tile.error b{color:var(--error)}
-.hint{background:var(--card);border-radius:16px;padding:14px 18px;margin:0 0 22px;box-shadow:var(--shadow);border:1px solid var(--line)}
-.hint p{margin:0 0 10px}
-.skill{background:var(--paper);border:1px solid var(--line);border-radius:18px;padding:18px 20px;margin:0 0 14px;box-shadow:var(--shadow);border-left:5px solid var(--safe)}
-.skill.caution{border-left-color:var(--caution)} .skill.danger{border-left-color:var(--danger)} .skill.error{border-left-color:var(--error)}
+.skill{background:var(--paper);border:1px solid var(--line);border-radius:18px;padding:18px 20px;margin:0 0 14px;box-shadow:var(--shadow)}
 .sh{display:flex;align-items:center;gap:10px;flex-wrap:wrap} .sh h2{margin:0;font-size:19px}
 .score{color:var(--muted);font-size:13px;margin-left:auto}
 .pill{display:inline-block;padding:1px 10px;border-radius:999px;font-size:12.5px;font-weight:700;color:#fff;background:var(--safe)}
@@ -480,7 +513,13 @@ button.review{margin-top:10px;border:1px dashed var(--line);background:none;colo
 button.review:hover{color:var(--ink);border-style:solid} button.review.on{color:var(--safe);border-style:solid;border-color:var(--safe)}
 footer{color:var(--muted);font-size:13px;margin-top:28px;border-top:1px solid var(--line);padding-top:12px} footer p{margin:4px 0}
 .disclaimer{margin-top:10px!important;line-height:1.6}
-@media (max-width:560px){main{padding:24px 14px 48px}.score{margin-left:0;width:100%}.by{margin-left:0}}
+@page{size:A4;margin:14mm}
+@media print{*{-webkit-print-color-adjust:exact;print-color-adjust:exact}body{background:#fff}main{max-width:none;padding:0}.rbar,button,.how,.no-match{display:none!important}
+.skill,.verdict-box,.finding,.ok-list,.dup-note{box-shadow:none;break-inside:avoid}.finding pre{max-height:none;overflow:visible}
+.skill{border-color:#17203326}a{color:inherit;text-decoration:none}}
+@media (max-width:560px){.rbar{flex-direction:column;align-items:stretch}.fb{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}
+.rbar input{margin-left:0;flex:none;width:100%;min-width:0}
+main{padding:24px 14px 48px}.score{margin-left:0;width:100%}.by{margin-left:0}}
 '''
 
 JS = '''
@@ -513,6 +552,43 @@ if (TOKEN && location.protocol.startsWith('http')) {
     });
   });
 }
+// 篩選: one kind of conclusion, and/or part of a name; the folded 可以 list opens when it has matches
+const bar = document.querySelector('.rbar');
+if (bar) {
+  let only = 'all';
+  const find = document.getElementById('find');
+  const apply = () => {
+    const q = find.value.trim().toLowerCase();
+    let shown = 0;
+    document.querySelectorAll('#skills section.skill').forEach(sec => {
+      const ok = (only === 'all' || sec.dataset.advice === only) && (!q || sec.dataset.name.includes(q));
+      sec.hidden = !ok;
+      if (ok) shown++;
+    });
+    const fold = document.getElementById('ok-list');
+    if (fold) {
+      const inside = [...fold.querySelectorAll('section.skill')].some(sec => !sec.hidden);
+      fold.hidden = !inside;
+      if (inside && (q || only === 'ok')) fold.open = true;
+    }
+    document.getElementById('no-match').hidden = shown > 0;
+  };
+  bar.addEventListener('click', ev => {
+    const b = ev.target.closest('button[data-f]');
+    if (!b) return;
+    only = b.dataset.f;
+    bar.querySelectorAll('button[data-f]').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+    apply();
+  });
+  find.addEventListener('input', apply);
+}
+// printing or saving as PDF: everything open, then back as it was
+let closed = [];
+addEventListener('beforeprint', () => {
+  closed = [...document.querySelectorAll('details:not([open])')];
+  closed.forEach(d => d.open = true);
+});
+addEventListener('afterprint', () => { closed.forEach(d => d.open = false); closed = []; });
 document.querySelectorAll('a[href^="#skill-"]').forEach(a => a.addEventListener('click', () => {
   const card = document.querySelector(a.getAttribute('href'));
   const fold = card && card.closest('details');

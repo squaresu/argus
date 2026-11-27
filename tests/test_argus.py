@@ -1121,3 +1121,20 @@ class PluginSkillFolders(unittest.TestCase):
         (old / '.claude-plugin').mkdir()
         (old / '.claude-plugin' / 'plugin.json').write_text('{"name": "figma"}')
         self.assertEqual([f for _, f in targets.installed_plugins(home)], [plugin])
+
+
+class ReportLayout(unittest.TestCase):
+    def test_conclusion_card_filter_and_neutral_tool_words(self):
+        bad = SkillResult('bad', '/b', [Outcome('skillspector', 'DO_NOT_INSTALL',
+                                                [Finding(scanner='skillspector', title='t', severity='HIGH')]), Outcome('bandit', 'SAFE')])
+        fine = [SkillResult(f'ok{i}', '/o', [Outcome('bandit', 'SAFE')]) for i in range(8)]
+        page = report.render('t', [bad] + fine, scanners.all_scanners()[:3], {}, installed=True)
+        self.assertNotIn('class="tiles"', page)                                  # the counts live in the conclusion card
+        self.assertLess(page.index('class="verdict-box'), page.index('複製整份報告給 Claude 判斷'))
+        self.assertIn('怎麼看這份報告？', page)
+        self.assertIn('class="rbar"', page)                                      # 9 skills: the filter bar
+        self.assertIn('data-advice="ask"', page)
+        self.assertIn('SkillSpector <em>疑慮較多</em>', page)                    # not 不建議安裝 next to 先問人
+        self.assertNotIn('<i>不建議安裝</i>', page)
+        few = report.render('t', [bad], scanners.all_scanners()[:3], {})
+        self.assertNotIn('class="rbar"', few)
