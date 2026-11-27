@@ -45,6 +45,8 @@ def calm_reason(category, severity, path, rule='', description=''):
         return '副檔名是 JavaScript、內容被認成 TypeScript。兩者寫法幾乎一樣，這是命名習慣，不是偽裝。'
     if rule.startswith('DATA_EXFIL_JS_FS_ACCESS'):
         return '只是讀寫電腦上的檔案，掃描器拿它當「可能和外流有關」的線索，本身沒有把資料送出去。'
+    if rule in ('SOCIAL_ENG_VAGUE_DESCRIPTION', 'MANIFEST_MISSING_LICENSE'):
+        return '只是說明寫得太短或沒寫授權，是寫作習慣，跟安全無關。'
     if rule == 'UNDECLARED_NETWORK_DESTINATION' and any(h in description for h in FONT_HOSTS):
         return '連的是 Google 字型，網頁載入字型很常見，不會送出你的資料。'
     return ''

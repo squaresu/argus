@@ -423,6 +423,10 @@ def render(title, results, chosen, versions, when=None, installed=False):
 def save(title, results, chosen, versions, snapshots=None, installed=False):
     when = datetime.now()
     name = f'技能安全報告-{when:%Y%m%d-%H%M%S}'
+    n = 2
+    while (tools.reports_dir() / f'{name}.html').exists():   # two scans in the same second keep both reports
+        name = f'技能安全報告-{when:%Y%m%d-%H%M%S}-{n}'
+        n += 1
     out = tools.reports_dir() / f'{name}.html'
     out.write_text(render(title, results, chosen, versions, when, installed), encoding='utf-8')
     counts = {v: sum(r.verdict == v for r in results) for v in ORDER}

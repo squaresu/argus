@@ -192,6 +192,10 @@ def scan(kind, value, scanner_ids):
                 if not kept:
                     raise targets.TargetError('已經停止，還沒有任何技能檢查完，所以沒有產生報告。')
                 results, folders = [r for r, _ in kept], [f for _, f in kept]
+                for r in results:   # say which tools never got to a skill, so its conclusion isn't taken as complete
+                    ran = {o.scanner for o in r.outcomes}
+                    r.outcomes += [Outcome(s.id, 'ERROR', error='按了停止檢查，這個工具沒有跑完。')
+                                   for s in chosen if s.id not in ran and uses(r, s)]
                 title += f'（中途停止：只檢查了其中 {len(results)} 個）'
                 job.say('已經停止，正在用檢查完的部分產生報告…')
             order = [s.id for s in chosen]
