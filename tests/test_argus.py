@@ -899,3 +899,42 @@ class ToolUpdates(unittest.TestCase):
         finally:
             server._status.clear(); server._status.update(saved[0])
             server._newest.clear(); server._newest.update(saved[1])
+
+
+class ShorterReports(unittest.TestCase):
+    """Repeated findings grouped, 多半不用擔心 left out of the text for Claude, 可以 skills folded away."""
+
+    def setUp(self):
+        reminder_ = lambda n: Finding(scanner='skillspector', title='提醒', rule='AE1', severity='HIGH', file='SKILL.md', line=n,
+                                      calm='只是提醒', snippet=f'long text {n}')
+        look = lambda n: Finding(scanner='skillspector', title='執行指令', rule='AST4', severity='MEDIUM', file='run.py', line=n,
+                                 snippet=f'subprocess.run(cmd)  # {n}')
+        self.busy = SkillResult('busy', '/b', [Outcome('skillspector', 'CAUTION', [reminder_(n) for n in (5, 9, 30)]
+                                                       + [look(1), look(2)])])
+        self.quiet = [SkillResult(f'quiet-{i}', '/q', [Outcome('skillspector', 'SAFE', [reminder_(1)])]) for i in range(3)]
+
+    def test_grouping(self):
+        groups = report.group_findings(self.busy.findings)
+        self.assertEqual([len(g) for g in groups], [3, 2])
+        self.assertEqual(report.locations(groups[0]), 'SKILL.md 第 5、9、30 行')
+
+    def test_text_for_claude(self):
+        text = report.claude_text(self.busy)
+        self.assertIn('run.py 第 1、2 行（共 2 處）', text)
+        self.assertIn('另有 3 項 Argus 依規則判斷為「多半不用擔心」，已省略：AE1（提醒） ×3', text)
+        self.assertNotIn('long text', text)                                       # their snippets aren't copied
+        everything = report.claude_all([self.busy] + self.quiet, False, '個技能')
+        self.assertIn('## busy', everything)
+        self.assertNotIn('## quiet-0', everything)
+        self.assertIn('其他 3 個技能', everything)
+        self.assertIn('quiet-0、quiet-1、quiet-2', everything)
+
+    def test_fine_skills_folded(self):
+        page = report.render('t', [self.busy] + self.quiet, scanners.all_scanners()[:1], {})
+        fold = page.index('class="ok-list"')
+        self.assertLess(page.index('<h2>busy</h2>'), fold)
+        self.assertGreater(page.index('<h2>quiet-0</h2>'), fold)
+        self.assertIn('可以裝的 3 個技能', page)
+        self.assertIn('共 3 處', page)
+        single = report.render('t', [self.quiet[0]], scanners.all_scanners()[:1], {})
+        self.assertNotIn('class="ok-list"', single)                              # one skill: nothing to fold
