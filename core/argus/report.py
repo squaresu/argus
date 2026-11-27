@@ -5,7 +5,7 @@ import re
 import json
 from datetime import datetime
 
-from . import COPYRIGHT, DISCLAIMER, NAME, VERSION, mcp, scanners, tools
+from . import COPYRIGHT, DISCLAIMER, NAME, VERSION, filecheck, mcp, plugins, scanners, tools
 from .model import SEVERITY_ZH, VERDICTS
 
 ORDER = {v: i for i, v in enumerate(VERDICTS + ['ERROR'])}
@@ -48,6 +48,21 @@ def advice(r):
     if r.findings:
         return 'ok', f'標出來的地方都屬於「多半不用擔心」或之前看過的。{missing}'
     return 'ok', f'沒有發現需要擔心的地方。{missing}'
+
+
+def unit_for(results, is_mcp=False):
+    """What the report counts: skills, MCP servers, or skills and plugins together (個項目)."""
+    if is_mcp:
+        return '個 MCP 伺服器'
+    return '個項目' if any(r.kind == 'plugin' for r in results) else '個技能'
+
+
+def count_words(results, unit):
+    """共 N … in words: 3 個技能、1 個外掛 when plugins are in it."""
+    n_plugins = sum(r.kind == 'plugin' for r in results)
+    if not n_plugins:
+        return f'{len(results)} {unit}'
+    return f'{len(results) - n_plugins} 個技能、{n_plugins} 個外掛'
 
 
 def summary_line(results, installed, unit):
@@ -111,6 +126,10 @@ def e(s):
 def scanner_name(sid):
     if sid == mcp.SCANNER:
         return mcp.SCANNER_NAME
+    if sid == filecheck.SCANNER:
+        return filecheck.SCANNER_NAME
+    if sid == plugins.SCANNER:
+        return plugins.SCANNER_NAME
     s = scanners.get(sid)
     return s.name if s else sid
 
@@ -155,7 +174,7 @@ def change_html(r):
 
 
 def kind_word(r):
-    return 'MCP 伺服器' if r.kind == 'mcp' else '技能'
+    return {'mcp': 'MCP 伺服器', 'plugin': '外掛'}.get(r.kind, '技能')
 
 
 def group_findings(findings):
@@ -268,7 +287,7 @@ def skill_html(r, idx, installed=False):
 
 def claude_text(r, installed=False):
     """One skill's results as plain text for the question to Claude."""
-    lines = [f'## {r.name}' + ('（MCP 伺服器，' + r.path + '）' if r.kind == 'mcp' else '')]
+    lines = [f'## {r.name}' + ('（MCP 伺服器，' + r.path + '）' if r.kind == 'mcp' else '（Claude Code 外掛裡技能以外的部分）' if r.kind == 'plugin' else '')]
     a, why = advice(r)
     lines.append(f'- Argus 依規則的初步結論：{advice_word(a, installed or r.kind == "mcp")}（{why}）')
     if r.capabilities:
@@ -353,7 +372,7 @@ def render(title, results, chosen, versions, when=None, installed=False):
     when = when or datetime.now()
     is_mcp = bool(results) and all(r.kind == 'mcp' for r in results)
     installed = installed or is_mcp
-    unit = '個 MCP 伺服器' if is_mcp else '個技能'
+    unit = unit_for(results, is_mcp)
     results = sorted(results, key=lambda r: (ADVICE_ORDER.index(advice(r)[0]), ORDER[r.verdict],
                                              -max([o.score or 0 for o in r.outcomes] or [0]), r.name))
     marks = [advice(r)[0] for r in results]
@@ -384,7 +403,7 @@ def render(title, results, chosen, versions, when=None, installed=False):
 <header class="top">
   <div class="brand">{LOGO}<span>{NAME}</span></div>
   <h1>{'MCP 伺服器檢查報告' if is_mcp else '技能安全報告'}</h1>
-  <p class="sub">{e(title)} · {when:%Y/%m/%d %H:%M} · 共 {len(results)} {unit}</p>
+  <p class="sub">{e(title)} · {when:%Y/%m/%d %H:%M} · 共 {count_words(results, unit)}</p>
   <div class="tools">使用的工具：{used}</div>
 </header>
 {summary_html(results, installed, unit, HINT_MCP if is_mcp else HINT_SKILLS)}{duplicates_html(results)}

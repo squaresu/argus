@@ -68,9 +68,9 @@ def scan_command(args):
         return 1
     results = job.results
     is_mcp = kind == 'mcp'
-    unit = '個 MCP 伺服器' if is_mcp else '個技能'
+    unit = report.unit_for(results, is_mcp)
     _, line = report.summary_line(results, job.installed, unit)
-    out = [f'{NAME} {VERSION} 檢查完成：共 {len(results)} {unit}',
+    out = [f'{NAME} {VERSION} 檢查完成：共 {report.count_words(results, unit)}',
            f'Argus 依規則的初步結論：{line}', '',
            report.claude_all(results, job.installed, unit),
            f'完整報告：{tools.reports_dir() / job.result}']

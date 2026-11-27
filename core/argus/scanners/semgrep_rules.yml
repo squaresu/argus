@@ -129,3 +129,53 @@ rules:
     pattern-either:
       - pattern: "{..., rejectUnauthorized: false, ...}"
       - pattern: process.env.NODE_TLS_REJECT_UNAUTHORIZED = $V
+
+  # --- shell scripts (.sh): matched as text, since that's how these patterns show up ---
+  - id: argus.sh-download-and-run
+    languages: [regex]
+    severity: ERROR
+    message: Downloads something and runs it straight away
+    paths: { include: ["*.sh", "*.bash", "*.zsh", "*.command"] }
+    pattern-regex: (curl|wget|fetch)\b[^\n|;]*\|\s*(sudo\s+)?(sh|bash|zsh|python3?|node|perl|ruby)\b|\b(sh|bash|zsh)\s+(-c\s+)?["']?\$\((curl|wget)\b|\b(sh|bash|zsh)\s+<\(\s*(curl|wget)\b
+
+  - id: argus.sh-decode-and-run
+    languages: [regex]
+    severity: ERROR
+    message: Decodes hidden text and runs it
+    paths: { include: ["*.sh", "*.bash", "*.zsh", "*.command"] }
+    pattern-regex: base64\s+(-d|--decode|-D)\b[^\n]*\|\s*(sh|bash|zsh|python3?)\b|\beval\s+["']?\$\([^)\n]*base64
+
+  - id: argus.sh-reverse-shell
+    languages: [regex]
+    severity: ERROR
+    message: Opens a connection that lets someone else control the computer
+    paths: { include: ["*.sh", "*.bash", "*.zsh", "*.command"] }
+    pattern-regex: /dev/tcp/|\bnc(at)?\b[^\n]*\s-e\s|\bmkfifo\b[^\n]*\bnc\b
+
+  - id: argus.sh-wipe
+    languages: [regex]
+    severity: ERROR
+    message: Deletes the home folder or the whole disk
+    paths: { include: ["*.sh", "*.bash", "*.zsh", "*.command"] }
+    pattern-regex: \brm\s+(-[a-zA-Z]*[rR][a-zA-Z]*\s+)+(--no-preserve-root\s+)?["']?(~|\$HOME|\$\{HOME\}|/)["']?/?\*?(\s|;|$)
+
+  - id: argus.sh-startup-file
+    languages: [regex]
+    severity: ERROR
+    message: Changes a file that runs at log-in or controls Claude
+    paths: { include: ["*.sh", "*.bash", "*.zsh", "*.command"] }
+    pattern-regex: (>>?|\btee\b(\s+-a)?)\s*["']?(~|\$HOME|\$\{HOME\})?/?[^\s"']*(\.bashrc|\.zshrc|\.bash_profile|\.zprofile|\.profile|LaunchAgents/|LaunchDaemons/|\.claude/settings|\.claude\.json)|\bcrontab\s+(-\s|[^-l\s])|\blaunchctl\s+(load|bootstrap)\b
+
+  - id: argus.sh-sensitive-path
+    languages: [regex]
+    severity: ERROR
+    message: Reads a file that holds keys, passwords or browser data
+    paths: { include: ["*.sh", "*.bash", "*.zsh", "*.command"] }
+    pattern-regex: (~|\$HOME|\$\{HOME\})/(\.ssh/|\.aws/credentials|\.npmrc|\.netrc|\.git-credentials|\.gnupg|\.kube/config|\.docker/config\.json|Library/Keychains|Library/Application Support/Google/Chrome)|\bsecurity\s+(find-generic-password|find-internet-password|dump-keychain)\b
+
+  - id: argus.sh-sudo
+    languages: [regex]
+    severity: WARNING
+    message: Asks for administrator rights
+    paths: { include: ["*.sh", "*.bash", "*.zsh", "*.command"] }
+    pattern-regex: (?m)(^[ \t]*|[;&|][ \t]*)sudo[ \t]+\S

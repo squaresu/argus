@@ -20,6 +20,8 @@
 | [detect-secrets](https://github.com/Yelp/detect-secrets) | Yelp | Apache-2.0 | 寫死的密碼與金鑰 |
 | [OSV-Scanner](https://github.com/google/osv-scanner) | Google | Apache-2.0 | 套件的已知漏洞和惡意套件 |
 
+Argus 自己也會檢查：外掛的 hooks（自動執行的指令）和指令、技能附帶的看不到內容的檔案、沒鎖定版本的套件，以及 MCP 伺服器的設定。
+
 ## 架構
 
 ```
@@ -36,6 +38,8 @@ core/argus/            核心，只用 Python 標準函式庫；Mac 和之後的
   cli.py               指令模式：argus scan <目標>（給 Claude 用）、argus watch（自動檢查新技能）
   integrations.py      建立 argus 指令、Claude 裡的 argus 技能、Mac 的自動檢查（LaunchAgent）、通知
   reminder.py          重新檢查提醒，以及自動檢查要掃哪些技能
+  plugins.py           外掛裡技能以外的部分：hooks、指令、代理和它們用到的程式
+  filecheck.py         看不到內容的檔案、沒鎖定版本的套件
   scanners/            每個掃描工具一個檔案；加檔案就是加工具
   ui/                  網頁介面（HTML / CSS / JS，沒有外部相依）
 mac/                   Mac 啟動器、Info.plist、圖示、打包腳本

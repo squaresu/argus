@@ -1,0 +1,214 @@
+{
+ "results": [
+  {
+   "check_id": "home.user.argus.core.argus.scanners.argus.sh-download-and-run",
+   "path": "install.sh",
+   "start": {
+    "line": 2,
+    "col": 1,
+    "offset": 12
+   },
+   "end": {
+    "line": 2,
+    "col": 44,
+    "offset": 55
+   },
+   "extra": {
+    "message": "Downloads something and runs it straight away",
+    "severity": "ERROR",
+    "lines": "requires login"
+   }
+  },
+  {
+   "check_id": "home.user.argus.core.argus.scanners.argus.sh-download-and-run",
+   "path": "install.sh",
+   "start": {
+    "line": 3,
+    "col": 1,
+    "offset": 56
+   },
+   "end": {
+    "line": 3,
+    "col": 16,
+    "offset": 71
+   },
+   "extra": {
+    "message": "Downloads something and runs it straight away",
+    "severity": "ERROR",
+    "lines": "requires login"
+   }
+  },
+  {
+   "check_id": "home.user.argus.core.argus.scanners.argus.sh-decode-and-run",
+   "path": "install.sh",
+   "start": {
+    "line": 4,
+    "col": 19,
+    "offset": 121
+   },
+   "end": {
+    "line": 4,
+    "col": 33,
+    "offset": 135
+   },
+   "extra": {
+    "message": "Decodes hidden text and runs it",
+    "severity": "ERROR",
+    "lines": "requires login"
+   }
+  },
+  {
+   "check_id": "home.user.argus.core.argus.scanners.argus.sh-reverse-shell",
+   "path": "install.sh",
+   "start": {
+    "line": 5,
+    "col": 12,
+    "offset": 147
+   },
+   "end": {
+    "line": 5,
+    "col": 21,
+    "offset": 156
+   },
+   "extra": {
+    "message": "Opens a connection that lets someone else control the computer",
+    "severity": "ERROR",
+    "lines": "requires login"
+   }
+  },
+  {
+   "check_id": "home.user.argus.core.argus.scanners.argus.sh-wipe",
+   "path": "install.sh",
+   "start": {
+    "line": 6,
+    "col": 1,
+    "offset": 175
+   },
+   "end": {
+    "line": 7,
+    "col": 1,
+    "offset": 185
+   },
+   "extra": {
+    "message": "Deletes the home folder or the whole disk",
+    "severity": "ERROR",
+    "lines": "requires login"
+   }
+  },
+  {
+   "check_id": "home.user.argus.core.argus.scanners.argus.sh-wipe",
+   "path": "install.sh",
+   "start": {
+    "line": 7,
+    "col": 1,
+    "offset": 185
+   },
+   "end": {
+    "line": 8,
+    "col": 1,
+    "offset": 200
+   },
+   "extra": {
+    "message": "Deletes the home folder or the whole disk",
+    "severity": "ERROR",
+    "lines": "requires login"
+   }
+  },
+  {
+   "check_id": "home.user.argus.core.argus.scanners.argus.sh-startup-file",
+   "path": "install.sh",
+   "start": {
+    "line": 8,
+    "col": 22,
+    "offset": 221
+   },
+   "end": {
+    "line": 8,
+    "col": 33,
+    "offset": 232
+   },
+   "extra": {
+    "message": "Changes a file that runs at log-in or controls Claude",
+    "severity": "ERROR",
+    "lines": "requires login"
+   }
+  },
+  {
+   "check_id": "home.user.argus.core.argus.scanners.argus.sh-startup-file",
+   "path": "install.sh",
+   "start": {
+    "line": 9,
+    "col": 43,
+    "offset": 275
+   },
+   "end": {
+    "line": 9,
+    "col": 57,
+    "offset": 289
+   },
+   "extra": {
+    "message": "Changes a file that runs at log-in or controls Claude",
+    "severity": "ERROR",
+    "lines": "requires login"
+   }
+  },
+  {
+   "check_id": "home.user.argus.core.argus.scanners.argus.sh-sensitive-path",
+   "path": "install.sh",
+   "start": {
+    "line": 10,
+    "col": 5,
+    "offset": 329
+   },
+   "end": {
+    "line": 10,
+    "col": 12,
+    "offset": 336
+   },
+   "extra": {
+    "message": "Reads a file that holds keys, passwords or browser data",
+    "severity": "ERROR",
+    "lines": "requires login"
+   }
+  },
+  {
+   "check_id": "home.user.argus.core.argus.scanners.argus.sh-sensitive-path",
+   "path": "install.sh",
+   "start": {
+    "line": 11,
+    "col": 1,
+    "offset": 343
+   },
+   "end": {
+    "line": 11,
+    "col": 31,
+    "offset": 373
+   },
+   "extra": {
+    "message": "Reads a file that holds keys, passwords or browser data",
+    "severity": "ERROR",
+    "lines": "requires login"
+   }
+  },
+  {
+   "check_id": "home.user.argus.core.argus.scanners.argus.sh-sudo",
+   "path": "install.sh",
+   "start": {
+    "line": 12,
+    "col": 1,
+    "offset": 384
+   },
+   "end": {
+    "line": 12,
+    "col": 7,
+    "offset": 390
+   },
+   "extra": {
+    "message": "Asks for administrator rights",
+    "severity": "WARNING",
+    "lines": "requires login"
+   }
+  }
+ ],
+ "errors": []
+}

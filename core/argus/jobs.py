@@ -9,7 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 
-from . import capabilities, mcp, reminder, report, reviews, scanners, targets, timing, tools, updates
+from . import capabilities, filecheck, mcp, plugins, reminder, report, reviews, scanners, targets, timing, tools, updates
 from .model import Outcome, SkillResult
 
 PARALLEL = timing.PARALLEL   # scanner runs at a time; each is its own process
@@ -131,13 +131,24 @@ def scan(kind, value, scanner_ids):
                                    capabilities=capabilities.analyze(f)) for f in folders]
             if kind in ('claude', 'paths'):
                 targets.label_duplicates(results, folders)
-            pairs = [(r, f, s) for r, f in zip(results, folders) for s in chosen]
-            job.items = [{'name': r.name, 'done': 0, 'total': len(chosen), 'advice': None} for r in results]
+            for r, f in zip(results, folders):   # Argus's own look: unreadable files, unpinned packages
+                r.outcomes.append(filecheck.check(f))
+            if kind == 'claude':   # the parts of each plugin that aren't skills: hooks, commands, their scripts
+                job.say('正在檢查外掛的 hooks 和指令…')
+                for r, f in plugins.collect(tmp):
+                    results.append(r)
+                    folders.append(f)
+            # a plugin's leftover parts have no SKILL.md: the skill scanners have nothing to read there
+            uses = lambda r, s: not (r.kind == 'plugin' and s.id in ('skillspector', 'cisco'))
+            pairs = [(r, f, s) for r, f in zip(results, folders) for s in chosen if uses(r, s)]
+            job.items = [{'name': r.name, 'done': 0, 'total': sum(uses(r, s) for s in chosen), 'advice': None} for r in results]
             item_of = {id(r): item for r, item in zip(results, job.items)}
             job.total = len(pairs)
             job.estimate = time.time() - job.started + timing.estimate(
                 [s.id for _, f, s in pairs if s.applies_to(f)])
-            job.say(f'找到 {len(folders)} 個技能，用 {len(chosen)} 個工具檢查，預估{timing.words(job.estimate)}…')
+            n_plugins = sum(r.kind == 'plugin' for r in results)
+            found = f'找到 {len(folders) - n_plugins} 個技能' + (f'、{n_plugins} 個外掛的 hooks 和指令' if n_plugins else '')
+            job.say(f'{found}，用 {len(chosen)} 個工具檢查，預估{timing.words(job.estimate)}…')
             versions = {s.id: s.version() or '?' for s in chosen}
 
             def one(pair):
@@ -170,8 +181,8 @@ def scan(kind, value, scanner_ids):
             with ThreadPoolExecutor(PARALLEL) as pool:
                 list(pool.map(one, pairs))
             order = [s.id for s in chosen]
-            for r in results:
-                r.outcomes.sort(key=lambda o: order.index(o.scanner))
+            for r in results:   # the tools in list order, Argus's own checks after them
+                r.outcomes.sort(key=lambda o: order.index(o.scanner) if o.scanner in order else len(order))
             job.say('正在跟上次的結果比對…')
             snapshots = track(results, folders)
             job.say('正在產生報告…')

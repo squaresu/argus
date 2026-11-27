@@ -15,6 +15,7 @@ from .base import Scanner, failed, has_files
 
 RULES = Path(__file__).with_name('semgrep_rules.yml')
 JS_EXT = {'.js', '.mjs', '.cjs', '.jsx', '.ts', '.mts', '.cts', '.tsx'}
+SH_EXT = {'.sh', '.bash', '.zsh', '.command'}
 
 # rule → (title, what it means, severity)
 RULE_ZH = {
@@ -28,6 +29,14 @@ RULE_ZH = {
     'throwaway-endpoint': ('連到常被用來收集資料的服務', '程式會連到 Discord／Telegram 機器人、webhook.site、ngrok 這類服務。正常技能偶爾會用，但這也是偷資料時最常用的收件地址。', 'HIGH'),
     'raw-ip': ('直接連到 IP 位址', '程式直接連到一串數字的 IP 位址，而不是一般網站的名字，比較難看出它連去哪裡。', 'MEDIUM'),
     'tls-off': ('關掉 HTTPS 安全檢查', '連線時關掉了憑證檢查，傳輸的內容可能被同一個網路上的人看到或竄改。', 'MEDIUM'),
+    # shell scripts
+    'sh-download-and-run': ('下載後直接執行', '腳本從網路下載程式，不經檢查就直接執行。下載的內容隨時可能被換掉，這是最常見的入侵方式之一。', 'CRITICAL'),
+    'sh-decode-and-run': ('解開隱藏的文字後執行', '腳本先把一段編碼過的文字解開，再直接執行。正常的腳本不需要把指令藏起來。', 'CRITICAL'),
+    'sh-reverse-shell': ('讓別人遠端控制電腦', '腳本開了一條連線，讓另一台電腦可以直接下指令控制這台電腦。正常技能不會這樣做。', 'CRITICAL'),
+    'sh-wipe': ('刪除整個家目錄或硬碟', '腳本會刪除整個家目錄或從根目錄開始刪除，可能把所有檔案都刪掉。', 'CRITICAL'),
+    'sh-startup-file': ('改動開機或 Claude 設定', '腳本會寫入 .zshrc、LaunchAgents、排程或 Claude 的設定檔。改了這些，程式就能在每次開機或打開 Claude 時自動執行。', 'HIGH'),
+    'sh-sensitive-path': ('讀取存放機密的檔案', '腳本會讀 SSH 金鑰、雲端帳號憑證、鑰匙圈或瀏覽器資料。一般技能用不到這些。', 'HIGH'),
+    'sh-sudo': ('要求管理員權限', '腳本用 sudo 取得管理員權限，可以修改整台電腦。看它要做的事是不是真的需要。', 'MEDIUM'),
 }
 TIP = '看程式要做的事需不需要這樣寫；拿不準就按「複製給 Claude 判斷」。'
 EXAMPLE_PATH = re.compile(r'(^|/)(examples?|samples?|demos?)/', re.I)
@@ -39,7 +48,7 @@ def calm_reason(rule, path):
         return 'TypeScript 型別定義檔（.d.ts）只描述介面，裡面的東西不會執行。'
     if is_documentation(path):
         return '出現在說明文件或範例裡，不是技能實際執行的程式。'
-    if rule not in ('decode-and-run', 'throwaway-endpoint', 'sensitive-path', 'startup-file'):
+    if rule not in ('decode-and-run', 'throwaway-endpoint', 'sensitive-path', 'startup-file') and not rule.startswith('sh-'):
         if TEST_PATH.search(path):
             return '出現在測試程式裡，一般使用技能時不會執行。'
         if EXAMPLE_PATH.search(path):
@@ -100,13 +109,13 @@ class Semgrep(Scanner):
     vendor = 'Semgrep'
     license = 'LGPL-2.1'
     homepage = 'https://github.com/semgrep/semgrep'
-    summary = '用 Argus 的規則檢查技能裡的 JavaScript／TypeScript 程式，例如執行指令、讀取金鑰檔、把資料送到可疑的地方。'
+    summary = '用 Argus 的規則檢查技能裡的 JavaScript／TypeScript 程式和 shell 腳本，例如執行指令、下載後直接執行、讀取金鑰檔、把資料送到可疑的地方。'
     order = 35
     exe = 'semgrep'
     package = 'semgrep'
 
     def applies_to(self, skill_dir):
-        return has_files(skill_dir, JS_EXT)
+        return has_files(skill_dir, JS_EXT | SH_EXT)
 
     def scan(self, skill_dir, work):
         out = work / 'semgrep.json'
