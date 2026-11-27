@@ -163,18 +163,25 @@ input[type=url]:focus { outline: none; border-color: var(--pick-line); }
 .progress-card details { text-align: left; max-width: 640px; margin: 18px auto 0; }
 .progress-card pre { background: var(--soft); border-radius: 10px; padding: 10px 12px; font-size: 12px; max-height: 240px; overflow: auto; white-space: pre-wrap; }
 .radar { width: 84px; height: 84px; margin: 0 auto; border-radius: 22%; background: linear-gradient(180deg, var(--navy-900), var(--navy-800)); position: relative; overflow: hidden; box-shadow: 0 0 0 1px #ece8e026, 0 4px 14px #17203333; }
-/* the scan: a line glides down and up over SKILL, trailing a fading afterimage. --y is where the line is,
-   --t how long its trail is (positive going down, negative going up): longest mid-sweep, nothing at the turn.
-   As in the icon, the word is mint wherever the line has passed: filling in on the way down, drawn back
-   on the way up. */
+/* the scan, like a conveyor: a SKILL card slides in from the left, the line scans it (the word fills mint
+   wherever the line has passed, as in the icon), and it leaves to the right as the next one comes in.
+   Cards take turns being scanned downward and upward, each with a fading afterimage behind the line.
+   --x moves the card, --y is the line, --t its trail (positive going down, negative going up, longest
+   mid-sweep), --d which way the current card fills (1 from the top, 0 from the bottom). */
+@property --x { syntax: '<percentage>'; inherits: true; initial-value: 0%; }
 @property --y { syntax: '<percentage>'; inherits: true; initial-value: 14%; }
 @property --t { syntax: '<percentage>'; inherits: true; initial-value: 0%; }
-.radar { --y: 14%; --t: 0%; animation: scan-y 1.3s ease-in-out infinite alternate, scan-t 2.6s linear infinite; }
-.radar::before, .radar::after { content: "SKILL"; position: absolute; inset: 0; display: grid; place-items: center; font: 800 19px/1 -apple-system, "Helvetica Neue", Arial, sans-serif; letter-spacing: -.02em; }
+@property --d { syntax: '<number>'; inherits: true; initial-value: 1; }
+.radar { --x: 0%; --y: 14%; --t: 0%; --d: 1;
+  animation: scan-x 4.8s ease-in-out infinite, scan-y 4.8s ease-in-out infinite, scan-t 4.8s linear infinite, scan-d 4.8s linear infinite; }
+.radar::before, .radar::after { content: "SKILL"; position: absolute; inset: 0; display: grid; place-items: center; font: 800 19px/1 -apple-system, "Helvetica Neue", Arial, sans-serif; letter-spacing: -.02em;
+  transform: translateX(var(--x)); }
 .radar::before { color: var(--cream); }
 .radar::after { color: var(--mint-bright); text-shadow: 0 0 8px #96f0be99; z-index: 2;
-  -webkit-mask-image: linear-gradient(to bottom, #000 var(--y), transparent var(--y));
-          mask-image: linear-gradient(to bottom, #000 var(--y), transparent var(--y)); }
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(var(--y) * var(--d)), transparent 0),
+                      linear-gradient(to top, #000 calc((100% - var(--y)) * (1 - var(--d))), transparent 0);
+          mask-image: linear-gradient(to bottom, #000 calc(var(--y) * var(--d)), transparent 0),
+                      linear-gradient(to top, #000 calc((100% - var(--y)) * (1 - var(--d))), transparent 0); }
 .radar span { position: absolute; left: 10%; right: 10%; top: var(--y); height: 3px; margin-top: -1.5px; border-radius: 3px; background: var(--mint-bright); box-shadow: 0 0 10px var(--mint-bright); z-index: 3; }
 .radar i { position: absolute; left: 10%; right: 10%; z-index: 1; pointer-events: none;
   background: linear-gradient(var(--dir), transparent, #96f0be14 40%, #96f0be4d);
@@ -182,11 +189,14 @@ input[type=url]:focus { outline: none; border-color: var(--pick-line); }
           mask-image: linear-gradient(to right, transparent, #000 18%, #000 82%, transparent); }
 .radar .trail-down { --dir: to bottom; top: calc(var(--y) - max(var(--t), 0%)); height: max(var(--t), 0%); }
 .radar .trail-up { --dir: to top; top: var(--y); height: max(var(--t) * -1, 0%); }
-@keyframes scan-y { from { --y: 14%; } to { --y: 86%; } }
-@keyframes scan-t { 0% { --t: 0%; } 25% { --t: 34%; } 50% { --t: 0%; } 75% { --t: -34%; } 100% { --t: 0%; } }
+/* first card: in, scanned downward, out; second card: in, scanned upward, out */
+@keyframes scan-x { 0% { --x: -115%; } 10%, 42% { --x: 0%; } 50% { --x: 115%; } 50.01% { --x: -115%; } 60%, 92% { --x: 0%; } 100% { --x: 115%; } }
+@keyframes scan-y { 0%, 13% { --y: 14%; } 38%, 63% { --y: 86%; } 88%, 100% { --y: 14%; } }
+@keyframes scan-t { 0%, 13% { --t: 0%; } 25.5% { --t: 30%; } 38%, 63% { --t: 0%; } 75.5% { --t: -30%; } 88%, 100% { --t: 0%; } }
+@keyframes scan-d { 0%, 50% { --d: 1; } 50.01%, 100% { --d: 0; } }
 .spinner { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--line); border-top-color: var(--mint-ink); animation: spin .8s linear infinite; flex: none; }
 @keyframes spin { to { transform: rotate(360deg); } }
-@media (prefers-reduced-motion: reduce) { .radar { animation: none; --y: 50%; --t: 24%; } .spinner { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .radar { animation: none; --x: 0%; --y: 50%; --t: 24%; --d: 1; } .spinner { animation: none; } }
 
 /* report view */
 .update { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; background: var(--mint); color: var(--navy-900); border: 1px solid var(--mint-ink); border-radius: 14px; padding: 10px 14px; margin: 0 0 16px; box-shadow: var(--shadow); font-size: 14px; }
