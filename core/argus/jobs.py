@@ -34,6 +34,7 @@ class Job:
         self.started = time.time()
         self.estimate = 0            # a scan: seconds the whole thing should take, once its size is known
         self.results = []            # a scan: the SkillResults, for the command line (python -m argus scan)
+        self.items = []              # a scan: per skill {name, done, total, advice}, for the progress list
         self.installed = False       # a scan: of skills already in use (wording: 可以繼續用 rather than 可以裝)
 
     def say(self, text):
@@ -53,7 +54,7 @@ class Job:
     def to_dict(self):
         return {k: getattr(self, k) for k in ('id', 'kind', 'label', 'status', 'done', 'total', 'current',
                                               'log', 'error', 'result', 'target')} | {
-            'elapsed': round(time.time() - self.started), 'remaining': self.remaining()}
+            'elapsed': round(time.time() - self.started), 'remaining': self.remaining(), 'items': self.items}
 
 
 def start(job, work):
@@ -129,6 +130,8 @@ def scan(kind, value, scanner_ids):
             results = [SkillResult(targets.skill_name(f), str(f), key=skill_key(kind, value, f, tmp),
                                    capabilities=capabilities.analyze(f)) for f in folders]
             pairs = [(r, f, s) for r, f in zip(results, folders) for s in chosen]
+            job.items = [{'name': r.name, 'done': 0, 'total': len(chosen), 'advice': None} for r in results]
+            item_of = {id(r): item for r, item in zip(results, job.items)}
             job.total = len(pairs)
             job.estimate = time.time() - job.started + timing.estimate(
                 [s.id for _, f, s in pairs if s.applies_to(f)])
@@ -155,6 +158,10 @@ def scan(kind, value, scanner_ids):
                         f.file = f.file[len(root):].lstrip('/\\')
                 with _lock:
                     result.outcomes.append(outcome)
+                    item = item_of[id(result)]
+                    item['done'] += 1
+                    if item['done'] == item['total']:   # all tools done: an early conclusion (before 已看過 is applied)
+                        item['advice'] = report.advice(result)[0]
                     job.done += 1
                     job.say(f'{scanner.name} 檢查完「{result.name}」（{job.done} / {job.total}）')
 
@@ -222,7 +229,30 @@ def mark_reviewed(report_file, key, reviewed=True):
 
 # --- installing a scanner ---
 
+def _install_one(scanner, job, on_checked=None):
+    """Install one tool and check that it starts. Raises TargetError with the reason when it doesn't."""
+    reason = scanner.preflight()
+    if reason:
+        raise targets.TargetError(reason)
+    uv = tools.find_exe('uv')
+    if not uv and scanner.needs_uv:
+        raise targets.TargetError('找不到 uv（安裝工具用的程式）。請關掉 Argus 再重新打開，它會自動安裝 uv。')
+    log = tools.state_dir() / 'install.log'
+    code, out, err = scanner.install(uv)
+    with log.open('a', encoding='utf-8') as fh:
+        fh.write(f'\n=== {datetime.now():%Y-%m-%d %H:%M} {scanner.name} (exit {code})\n{out}\n{err}\n')
+    if code != 0:
+        raise targets.TargetError(f'安裝 {scanner.name} 失敗：{tools.last_lines(err)}（完整紀錄在 {log}）')
+    job.say(f'{scanner.name} 裝好了，正在確認能不能正常啟動（第一次可能要一分鐘）…')
+    version = scanner.version()
+    if on_checked:
+        on_checked(scanner.id, version)
+    if not version:
+        raise targets.TargetError(f'{scanner.name} 裝好了，但打不開。（紀錄在 {log}）')
+
+
 def install(scanner_id, on_checked=None):
+    """on_checked(scanner id, version or '') is called once the tool has been tried."""
     scanner = scanners.get(scanner_id)
     if scanner is None:
         raise targets.TargetError('不認得的掃描工具。')
@@ -231,29 +261,50 @@ def install(scanner_id, on_checked=None):
         raise targets.TargetError(reason)
 
     def work(job):
-        uv = tools.find_exe('uv')
-        if not uv and scanner.needs_uv:
-            raise targets.TargetError('找不到 uv（安裝工具用的程式）。請關掉 Argus 再重新打開，它會自動安裝 uv。')
-        job.total = 2
+        job.total = 1
         job.say(f'正在安裝 {scanner.name}，大約 1–3 分鐘…')
-        log = tools.state_dir() / 'install.log'
-        code, out, err = scanner.install(uv)
-        with log.open('a', encoding='utf-8') as fh:
-            fh.write(f'\n=== {datetime.now():%Y-%m-%d %H:%M} {scanner.name} (exit {code})\n{out}\n{err}\n')
+        _install_one(scanner, job, on_checked)
         job.done = 1
-        if code != 0:
-            raise targets.TargetError(f'安裝 {scanner.name} 失敗：{tools.last_lines(err)}（完整紀錄在 {log}）')
-        job.say('安裝好了，正在確認能不能正常啟動（第一次可能要一分鐘）…')
-        version = scanner.version()
-        if on_checked:
-            on_checked(version)
-        if not version:
-            raise targets.TargetError(f'{scanner.name} 裝好了，但打不開。（紀錄在 {log}）')
-        job.done = 2
 
     job = Job('install', scanner.name)
     job.target = scanner_id
     return start(job, work)
+
+
+def install_all(scanner_ids, on_checked=None):
+    """全部安裝 / 全部更新: the given tools one after another. One that fails doesn't stop the rest; the job
+    ends with the list of those that failed."""
+    todo = [s for s in scanners.all_scanners() if s.id in scanner_ids]
+    if not todo:
+        raise targets.TargetError('所有工具都已經裝好了。')
+
+    def work(job):
+        job.total = len(todo)
+        failed = []
+        for n, scanner in enumerate(todo, 1):
+            job.target = scanner.id
+            job.say(f'正在安裝 {scanner.name}（{n} / {len(todo)}），每個大約 1–3 分鐘…')
+            try:
+                _install_one(scanner, job, on_checked)
+            except targets.TargetError as err:
+                failed.append(f'{scanner.name}（{err}）')
+                job.say(str(err))
+            job.done = n
+        if failed:
+            raise targets.TargetError('有工具沒裝好：' + '；'.join(failed))
+
+    job = Job('install', '全部安裝')
+    job.target = todo[0].id
+    return start(job, work)
+
+
+def delete_report(file):
+    """Delete one report and its record (from 最近的報告)."""
+    folder = tools.reports_dir()
+    if '/' in file or '\\' in file or not file.endswith('.html') or not (folder / file).is_file():
+        raise targets.TargetError('找不到這份報告。')
+    (folder / file).unlink()
+    (folder / (Path(file).stem + '.json')).unlink(missing_ok=True)
 
 
 # --- updating Argus itself ---

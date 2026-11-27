@@ -1003,3 +1003,41 @@ class ClaudeCompanion(unittest.TestCase):
         worst, line = report.summary_line([ok, bad], True, '個技能')
         self.assertEqual(worst, 'no')
         self.assertEqual(line, '1 個技能不建議用、1 個技能可以繼續用（不建議用：b）')
+
+
+class InstallAllAndHistory(unittest.TestCase):
+    def test_install_all_goes_on_after_a_failure(self):
+        tried = []
+
+        def fake(scanner, job, on_checked=None):
+            tried.append(scanner.id)
+            if scanner.id == 'cisco':
+                raise targets.TargetError('沒網路')
+        saved = jobs._install_one
+        jobs._install_one = fake
+        try:
+            job = jobs.install_all(['bandit', 'cisco', 'secrets'])
+            for _ in range(100):
+                if job.status != 'running':
+                    break
+                time.sleep(0.02)
+        finally:
+            jobs._install_one = saved
+        self.assertEqual(tried, ['cisco', 'bandit', 'secrets'])               # in the tool list's order
+        self.assertEqual(job.status, 'error')
+        self.assertIn('Cisco Skill Scanner（沒網路）', job.error)
+        self.assertEqual(job.done, 3)
+
+    def test_delete_report(self):
+        saved = tools.reports_dir
+        d = Path(tempfile.mkdtemp())
+        tools.reports_dir = lambda: d
+        try:
+            (d / 'r.html').write_text('x')
+            (d / 'r.json').write_text('{}')
+            jobs.delete_report('r.html')
+            self.assertEqual(list(d.iterdir()), [])
+            with self.assertRaises(targets.TargetError):
+                jobs.delete_report('../etc/passwd.html')
+        finally:
+            tools.reports_dir = saved

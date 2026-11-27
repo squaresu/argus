@@ -71,6 +71,11 @@ def start_checks():
     check_newest()
 
 
+def record_check(sid, version):
+    """After an install: whether the tool starts, recorded before the install job reports done."""
+    _status[sid] = ('ok', version) if version else ('broken', '')
+
+
 def tool_info(s):
     status, version = _status.get(s.id, ('checking', ''))
     if status == 'checking' and not s.installed():
@@ -205,8 +210,15 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send(409, {'error': '已經有工作在進行，請等它完成。'})
                 sid = data.get('id')
                 # the install job checks the tool starts; record that before the job reports done
-                job = jobs.install(sid, on_checked=lambda v: _status.__setitem__(sid, ('ok', v) if v else ('broken', '')))
+                job = jobs.install(sid, on_checked=record_check)
                 return self.send(200, job.to_dict())
+            if path == '/api/install-all':   # 全部安裝 / 全部更新
+                if jobs.busy():
+                    return self.send(409, {'error': '已經有工作在進行，請等它完成。'})
+                return self.send(200, jobs.install_all(data.get('ids') or [], on_checked=record_check).to_dict())
+            if path == '/api/delete-report':
+                jobs.delete_report(data.get('file') or '')
+                return self.send(200, {'ok': True})
             if path == '/api/review':   # 標記為已看過, from a report
                 count = jobs.mark_reviewed(data.get('report') or '', data.get('key') or '', bool(data.get('reviewed', True)))
                 return self.send(200, {'reviewed': count})

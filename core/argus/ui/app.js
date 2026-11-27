@@ -33,6 +33,7 @@ function toast(text, ms = 4000) {
 function show(view) {
   for (const v of ['form', 'progress', 'report']) $(`#view-${v}`).hidden = v !== view;
   $('#hero').hidden = view !== 'form';
+  document.body.classList.toggle('report-mode', view === 'report');
   window.scrollTo(0, 0);
 }
 
@@ -73,7 +74,40 @@ function renderScanners() {
       <div><span class="name">${esc(s.name)}</span><span class="vendor">${esc(s.vendor)} · ${esc(s.license)}</span><p>${esc(s.summary)}</p></div>
       ${right}</li>`;
   }).join('');
+  renderToolsCard();
   validate();
+}
+
+let toolsOpen = false;    // the person opened the folded tool list
+function renderToolsCard() {
+  const list = state.scanners;
+  const missing = list.filter((s) => s.status === 'missing' || s.status === 'broken');
+  const outdated = list.filter((s) => s.status === 'ok' && s.outdated);
+  const ready = !missing.length && !list.some((s) => s.status === 'checking');
+  // 全部安裝 for what's missing; once everything is there, 全部更新 for what has a newer version
+  const todo = missing.length ? missing : outdated;
+  const all = $('#install-all');
+  all.hidden = !todo.length || !!installing;
+  all.dataset.ids = todo.map((s) => s.id).join(',');
+  all.textContent = missing.length
+    ? `全部安裝（${missing.length} 個，約 ${Math.max(1, missing.length * 2)} 分鐘）` : `全部更新（${outdated.length} 個）`;
+  // folded: one line saying what will be used; 調整 opens the list
+  const folded = ready && !toolsOpen && !installing;
+  const used = list.filter((s) => s.installed && checked.has(s.id)).length;
+  $('#tools-summary').hidden = !ready;
+  $('#tools-summary').setAttribute('aria-expanded', String(!folded));
+  $('#tools-detail').hidden = folded;
+  $('#tools-summary-text').textContent = (used === list.length ? `${list.length} 個工具都裝好了，全部會用來檢查` : `會用 ${used} / ${list.length} 個工具檢查`)
+    + (outdated.length ? `　·　${outdated.length} 個有新版` : '');
+  $('#tools-summary-link').textContent = folded ? '調整' : '收起';
+}
+
+async function installAll() {
+  const ids = $('#install-all').dataset.ids.split(',').filter(Boolean);
+  try {
+    const job = await api('/api/install-all', { ids });
+    watchInstall(job.target, job.id, ids);
+  } catch (err) { toast(err.message, 8000); }
 }
 
 // "有新版本" notice; 稍後再說 hides it for that version only
@@ -177,6 +211,17 @@ async function watchUpdate(jobId) {
   }
 }
 
+const TRASH = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></svg>';
+// the report's conclusion in a few words, like the line at the top of the report
+function historyLine(r) {
+  const a = r.advice;
+  if (!a) return r.title;
+  if (r.skills === 1) return adviceWord(a.no ? 'no' : a.ask ? 'ask' : 'ok', r.installed);
+  if (a.no) return `${a.no} 個${adviceWord('no', r.installed)}` + (a.ask ? `、${a.ask} 個先問人` : '');
+  if (a.ask) return `${a.ask} 個先問人，其他${adviceWord('ok', r.installed)}`;
+  return `全部${adviceWord('ok', r.installed)}`;
+}
+
 function renderHistory() {
   const h = state.history || [];
   $('#history-card').hidden = !h.length;
@@ -185,7 +230,12 @@ function renderHistory() {
       ? ['no', 'ask', 'ok'].filter((a) => r.advice[a]).map((a) => `<span class="dot ${ADVICE_CLASS[a]}" title="${adviceWord(a, r.installed)}">${r.advice[a]}</span>`).join('')
       : ['DO_NOT_INSTALL', 'CAUTION', 'SAFE', 'ERROR']
         .filter((v) => r.counts?.[v]).map((v) => `<span class="dot ${VERDICT_CLASS[v]}" title="${VERDICT_ZH[v]}">${r.counts[v]}</span>`).join('');
-    return `<li data-file="${esc(r.file)}"><span class="h-title">${esc(r.title)}</span><span class="dots">${dots}</span><span class="h-when">${esc(r.when)} · ${r.skills} 個技能</span></li>`;
+    const unit = r.title === '我的 MCP 伺服器' ? '個 MCP 伺服器' : '個技能';
+    return `<li data-file="${esc(r.file)}" tabindex="0">
+      <div class="h-main"><span class="h-title">${esc(historyLine(r))}</span>
+        <span class="h-when">${esc(r.title)} · ${esc(r.when)} · ${r.skills} ${unit}</span></div>
+      <span class="dots">${dots}</span>
+      <button class="h-del" type="button" data-del="${esc(r.file)}" aria-label="刪除這份報告" title="刪除這份報告">${TRASH}</button></li>`;
   }).join('');
 }
 
@@ -256,6 +306,17 @@ function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
 let following = null;
 
+const ITEM_WORD = { ok: '可以', ask: '先問人', no: '不建議' };
+function renderItems(items) {
+  $('#p-items').hidden = items.length < 2;
+  $('#p-items').innerHTML = items.map((it) => {
+    const right = it.advice ? `<span class="pill-sm ${ADVICE_CLASS[it.advice]}">${ITEM_WORD[it.advice]}</span>`
+      : it.done ? `<span class="p-run"><span class="spinner"></span>${it.done} / ${it.total}</span>`
+      : '<span class="p-wait">等待中</span>';
+    return `<li class="${it.advice ? 'done' : it.done ? 'run' : ''}"><span class="p-name">${esc(it.name)}</span>${right}</li>`;
+  }).join('');
+}
+
 async function follow(jobId) {
   following = jobId;
   show('progress');
@@ -273,6 +334,7 @@ async function follow(jobId) {
     $('#p-count').textContent = job.status === 'running'
       ? `${job.total ? `${job.done} / ${job.total} · ` : ''}已經過 ${clock(job.elapsed)}${left}` : (job.total ? `${job.done} / ${job.total}` : '');
     $('#p-log').textContent = job.log.join('\n');
+    renderItems(job.items || []);
     if (job.status !== 'running') {
       following = null;
       await loadState().catch(() => {});
@@ -293,19 +355,21 @@ async function install(id) {
 }
 
 // follow an install next to its tool; the server has the tool's status ready by the time the job ends
-async function watchInstall(id, jobId) {
+// follow an install next to its tool; 全部安裝 moves from tool to tool, so the spinner follows job.target
+async function watchInstall(id, jobId, ids = [id]) {
   installing = { id, job: jobId };
   renderScanners();
   for (;;) {
     await sleep(1000);
     let j;
     try { j = await api(`/api/job/${jobId}`); } catch { continue; }
+    if (j.target && j.target !== installing.id && j.status === 'running') { installing.id = j.target; renderScanners(); }
     const t = $('#inst-text'); if (t) t.textContent = j.current;
     if (j.status !== 'running') {
       installing = null;
-      if (j.status === 'done') checked.add(id);
+      ids.forEach((x) => checked.add(x));
       await loadState().catch(() => {});
-      toast(j.status === 'done' ? '安裝完成 ✓' : j.error, j.status === 'done' ? 4000 : 9000);
+      toast(j.status === 'done' ? (ids.length > 1 ? '全部安裝完成 ✓' : '安裝完成 ✓') : j.error, j.status === 'done' ? 4000 : 12000);
       return;
     }
   }
@@ -390,10 +454,22 @@ $('#quit').addEventListener('click', async () => {
   try { await api('/api/quit', {}); } catch {}
   document.body.innerHTML = '<p style="text-align:center;margin-top:30vh;font-size:16px">Argus 已經結束，可以關掉這個分頁了。</p>';
 });
-$('#history').addEventListener('click', (ev) => {
+$('#history').addEventListener('click', async (ev) => {
+  const del = ev.target.closest('[data-del]');
+  if (del) {
+    if (!confirm('要刪除這份報告嗎？刪除後就找不回來了。')) return;
+    try { await api('/api/delete-report', { file: del.dataset.del }); await loadState(); toast('已刪除。'); } catch (err) { toast(err.message); }
+    return;
+  }
   const li = ev.target.closest('li[data-file]');
   if (li) openReport(li.dataset.file);
 });
+$('#history').addEventListener('keydown', (ev) => {
+  const li = ev.target.closest('li[data-file]');
+  if (li && ev.target === li && (ev.key === 'Enter' || ev.key === ' ')) { ev.preventDefault(); openReport(li.dataset.file); }
+});
+$('#install-all').addEventListener('click', installAll);
+$('#tools-summary').addEventListener('click', () => { toolsOpen = $('#tools-summary').getAttribute('aria-expanded') !== 'true'; renderToolsCard(); });
 $('#open-reports').addEventListener('click', () => api('/api/open', {}).catch((e) => toast(e.message)));
 // About: three tabs, so nothing needs a long scroll; the footer link opens straight onto 隱私
 function showTab(name) {
