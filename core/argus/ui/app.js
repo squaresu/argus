@@ -23,6 +23,25 @@ async function api(path, body) {
   return data;
 }
 
+// 6. a question in Argus's own dialog (the browser's confirm box looks like a web page's warning)
+function ask(message, { title = '確定嗎？', ok = '確定', danger = false } = {}) {
+  const d = $('#confirm');
+  $('#confirm-title').textContent = title;
+  $('#confirm-text').textContent = message;
+  $('#confirm-ok').textContent = ok;
+  $('#confirm-ok').classList.toggle('danger', danger);
+  d.returnValue = '';
+  d.showModal();
+  return new Promise((resolve) => d.addEventListener('close', () => resolve(d.returnValue === 'ok'), { once: true }));
+}
+
+// 5. an error stays on screen, with a way to copy it, until the person closes it
+function showError(message) {
+  $('#error-text').textContent = message;
+  $('#error-box').hidden = false;
+  $('#error-box').scrollIntoView({ block: 'nearest' });
+}
+
 function toast(text, ms = 4000) {
   const t = document.createElement('div');
   t.className = 'toast'; t.textContent = text;
@@ -64,7 +83,7 @@ function renderScanners() {
     const button = (label) => `<button class="btn" type="button" data-install="${esc(s.id)}" ${installing ? 'disabled' : ''}>${label}</button>`;
     const right = busy
       ? `<span class="installing"><span class="spinner"></span><span id="inst-text">安裝中…</span></span>`
-      : s.status === 'ok' && s.outdated ? `<span class="fix"><span class="badge new" title="現在的版本：${esc(s.version)}">有新版 ${esc(s.newest)}</span>${button('更新')}</span>`
+      : s.status === 'ok' && s.outdated ? `<span class="fix"><span class="newer" title="現在的版本：${esc(s.version)}">可更新到 ${esc(s.newest)}</span>${button('更新')}</span>`
       : s.status === 'ok' ? `<span class="badge ok" title="${esc(s.version)}">已安裝</span>`
       : s.status === 'checking' ? `<span class="badge" title="正在確認這個工具能不能正常啟動">確認中…</span>`
       : s.status === 'broken' ? `<span class="fix"><span class="badge bad">打不開</span>${button('重新安裝')}</span>`
@@ -107,7 +126,7 @@ async function installAll() {
   try {
     const job = await api('/api/install-all', { ids });
     watchInstall(job.target, job.id, ids);
-  } catch (err) { toast(err.message, 8000); }
+  } catch (err) { showError(err.message); }
 }
 
 // "有新版本" notice; 稍後再說 hides it for that version only
@@ -143,16 +162,16 @@ function renderCompanion() {
   t.textContent = c.autocheck_supported ? t.dataset.mac
     : '自動檢查目前只有 Mac 版，Windows 版之後會加上。打開 Argus 時的「重新檢查提醒」一樣會告訴你哪些技能有更新。';
 }
-async function toggleCompanion(el, path, ask) {
+async function toggleCompanion(el, path, question) {
   const on = el.checked;
-  if (on && ask && !confirm(ask)) { el.checked = false; return; }
+  if (on && question && !(await ask(question, { title: '開啟自動檢查？', ok: '開啟' }))) { el.checked = false; return; }
   el.disabled = true;
   try {
     const r = await api(path, { on });
     toast(path === '/api/claude-skill'
       ? (r.skill ? '已經加到 Claude ✓ 下次在 Claude Code 說「幫我檢查這個技能」就會用 Argus。' : '已經從 Claude 移除。')
       : (r.autocheck ? '已開啟自動檢查 ✓' : '已關閉自動檢查。'), 6000);
-  } catch (err) { el.checked = !on; toast(err.message, 8000); }
+  } catch (err) { el.checked = !on; showError(err.message); }
   el.disabled = false;
   loadState().catch(() => {});
 }
@@ -180,8 +199,9 @@ function renderReminder() {
 }
 
 async function startUpdate() {
-  if (!confirm(`要更新到 Argus ${state.update.latest} 嗎？\n\nArgus 會下載新版、換掉現在這一版，再自動重新打開。正在進行的工作會被中斷。`)) return;
-  try { watchUpdate((await api('/api/update', {})).id); } catch (err) { toast(err.message, 8000); }
+  if (!(await ask('Argus 會下載新版、換掉現在這一版，再自動重新打開。正在進行的工作會被中斷。',
+    { title: `更新到 Argus ${state.update.latest}？`, ok: '立即更新' }))) return;
+  try { watchUpdate((await api('/api/update', {})).id); } catch (err) { showError(err.message); }
 }
 
 async function watchUpdate(jobId) {
@@ -198,7 +218,7 @@ async function watchUpdate(jobId) {
     updating = null;
     $('#update-progress').hidden = true;
     $('#update-actions').hidden = false;
-    if (j.status === 'error') { toast(j.error, 12000); return; }
+    if (j.status === 'error') { showError(j.error); return; }
     try {
       await api('/api/relaunch', {});
       $('#updated').showModal();
@@ -227,10 +247,19 @@ function historyLine(r) {
   return `全部${adviceWord('ok', r.installed)}`;
 }
 
+let historyAll = false;
 function renderHistory() {
   const h = state.history || [];
   $('#history-card').hidden = !h.length;
-  $('#history').innerHTML = h.slice(0, 8).map((r) => {
+  document.body.classList.toggle('returning', h.length > 0);
+  // used a few times: the reports come first, three of them, with the rest a click away
+  const upFront = h.length >= 3;
+  const card = $('#history-card');
+  if (upFront && card.nextElementSibling !== $('#targets-card')) $('#targets-card').before(card);
+  const shown = upFront && !historyAll ? h.slice(0, 3) : h.slice(0, 12);
+  $('#history-more').hidden = !upFront || h.length <= 3;
+  $('#history-more').textContent = historyAll ? '收起' : `看全部 ${Math.min(h.length, 12)} 份`;
+  $('#history').innerHTML = shown.map((r) => {
     const dots = r.advice
       ? ['no', 'ask', 'ok'].filter((a) => r.advice[a]).map((a) => `<span class="dot ${ADVICE_CLASS[a]}" title="${adviceWord(a, r.installed)}">${r.advice[a]}</span>`).join('')
       : ['DO_NOT_INSTALL', 'CAUTION', 'SAFE', 'ERROR']
@@ -254,7 +283,7 @@ async function renderEstimate() {
   const k = kind();
   const el = $('#start-estimate');
   const tools = state ? state.scanners.filter((s) => s.installed && checked?.has(s.id)).map((s) => s.id) : [];
-  if (!state || k === 'mcp' || !tools.length || ((k === 'folder' || k === 'zip') && !picked[k])) { el.textContent = ''; return; }
+  if (!state || k === 'mcp' || !tools.length || ((k === 'folder' || k === 'zip') && !picked[k])) { renderEstimate.ask = null; el.textContent = ''; return; }
   const ask = `${k}|${picked[k] || ''}|${tools.join(',')}`;
   renderEstimate.ask = ask;
   try {
@@ -334,7 +363,9 @@ async function follow(jobId) {
     if (following !== jobId) return;
     let job;
     try { job = await api(`/api/job/${jobId}`); } catch (err) { await sleep(1500); continue; }
-    $('#p-title').textContent = job.status === 'running' ? '正在檢查…' : job.status === 'done' ? '檢查完成' : '沒有完成';
+    $('#p-title').textContent = job.status === 'running' ? (job.cancelled ? '正在停止…' : '正在檢查…') : job.status === 'done' ? '檢查完成' : '沒有完成';
+    $('#p-stop').hidden = job.status !== 'running' || job.kind !== 'scan';
+    $('#p-stop').disabled = !!job.cancelled;
     if (job.status === 'running' && !job.total) $('#p-bar').style.width = '4%';
     $('#p-current').textContent = job.status === 'error' ? job.error : job.current;
     $('#p-bar').style.width = job.total ? `${Math.round((job.done / job.total) * 100)}%` : '4%';
@@ -349,7 +380,7 @@ async function follow(jobId) {
       await loadState().catch(() => {});
       if (job.status === 'done' && job.result) { openReport(job.result); return; }
       $('#p-back').hidden = false;   // never leave the person on this screen without a way back
-      if (job.status === 'error') { show('form'); toast(job.error, 9000); }
+      if (job.status === 'error') { show('form'); showError(job.error); }
       return;
     }
     await sleep(800);
@@ -360,7 +391,7 @@ async function install(id) {
   try {
     const job = await api('/api/install', { id });
     watchInstall(id, job.id);
-  } catch (err) { toast(err.message, 8000); }
+  } catch (err) { showError(err.message); }
 }
 
 // follow an install next to its tool; the server has the tool's status ready by the time the job ends
@@ -378,7 +409,7 @@ async function watchInstall(id, jobId, ids = [id]) {
       installing = null;
       ids.forEach((x) => checked.add(x));
       await loadState().catch(() => {});
-      toast(j.status === 'done' ? (ids.length > 1 ? '全部安裝完成 ✓' : '安裝完成 ✓') : j.error, j.status === 'done' ? 4000 : 12000);
+      if (j.status === 'done') toast(ids.length > 1 ? '全部安裝完成 ✓' : '安裝完成 ✓'); else showError(j.error);
       return;
     }
   }
@@ -390,7 +421,7 @@ async function start() {
   try {
     const job = await api('/api/scan', { kind: k, value, scanners: [...checked] });
     follow(job.id);
-  } catch (err) { toast(err.message, 8000); }
+  } catch (err) { showError(err.message); }
 }
 
 function openReport(file) {
@@ -411,7 +442,7 @@ $('#pick').addEventListener('click', async () => {
     const { path } = await api('/api/pick', { kind: k });
     if (path) picked[k] = path;
     renderTarget();
-  } catch (err) { toast(err.message); }
+  } catch (err) { showError(err.message); }
   $('#pick').disabled = false;
 });
 $('#scanners').addEventListener('change', (ev) => {
@@ -453,21 +484,21 @@ $('#remind-later').addEventListener('click', () => {
 });
 $('#skill-toggle').addEventListener('change', (ev) => toggleCompanion(ev.target, '/api/claude-skill'));
 $('#auto-toggle').addEventListener('change', (ev) => toggleCompanion(ev.target, '/api/autocheck',
-  '開啟後，從現在開始新裝或更新的 Claude 技能會在背景自動檢查。\n\n現在已經裝好的技能不會自動重掃；想檢查的話，用「我所有的 Claude 技能」掃一次就好。'));
+  '開啟後，從現在開始新裝或更新的 Claude 技能會在背景自動檢查。\n\n現在已經裝好的技能不會自動重掃；想檢查的話，用「我的 Claude 技能」掃一次就好。'));
 $('#update-later').addEventListener('click', () => {
   try { localStorage.setItem('argus-update-dismissed', state.update.latest); } catch {}
   $('#update').hidden = true;
 });
 $('#quit').addEventListener('click', async () => {
-  if (!confirm('要結束 Argus 嗎？正在進行的掃描或安裝會被中斷。之後點兩下 Argus 就能重新打開。')) return;
+  if (!(await ask('正在進行的掃描或安裝會被中斷。之後點兩下 Argus 就能重新打開。', { title: '結束 Argus？', ok: '結束', danger: true }))) return;
   try { await api('/api/quit', {}); } catch {}
   document.body.innerHTML = '<p style="text-align:center;margin-top:30vh;font-size:16px">Argus 已經結束，可以關掉這個分頁了。</p>';
 });
 $('#history').addEventListener('click', async (ev) => {
   const del = ev.target.closest('[data-del]');
   if (del) {
-    if (!confirm('要刪除這份報告嗎？刪除後就找不回來了。')) return;
-    try { await api('/api/delete-report', { file: del.dataset.del }); await loadState(); toast('已刪除。'); } catch (err) { toast(err.message); }
+    if (!(await ask('刪除後就找不回來了。', { title: '刪除這份報告？', ok: '刪除', danger: true }))) return;
+    try { await api('/api/delete-report', { file: del.dataset.del }); await loadState(); toast('已刪除。'); } catch (err) { showError(err.message); }
     return;
   }
   const li = ev.target.closest('li[data-file]');
@@ -478,6 +509,7 @@ $('#history').addEventListener('keydown', (ev) => {
   if (li && ev.target === li && (ev.key === 'Enter' || ev.key === ' ')) { ev.preventDefault(); openReport(li.dataset.file); }
 });
 $('#install-all').addEventListener('click', installAll);
+$('#history-more').addEventListener('click', () => { historyAll = !historyAll; renderHistory(); });
 $('#tools-summary').addEventListener('click', () => { toolsOpen = $('#tools-summary').getAttribute('aria-expanded') !== 'true'; renderToolsCard(); });
 $('#open-reports').addEventListener('click', () => api('/api/open', {}).catch((e) => toast(e.message)));
 // About: three tabs, so nothing needs a long scroll; the footer link opens straight onto 隱私
@@ -527,4 +559,17 @@ setInterval(async () => {
 }, 20000);
 
 renderTarget();
-loadState().catch((err) => toast(err.message, 8000));
+loadState().catch((err) => showError(err.message));
+$('#error-close').addEventListener('click', () => { $('#error-box').hidden = true; });
+$('#error-copy').addEventListener('click', async () => {
+  try { await navigator.clipboard.writeText($('#error-text').textContent); $('#error-copy').textContent = '已複製 ✓'; }
+  catch { $('#error-copy').textContent = '複製失敗，請手動選取'; }
+  setTimeout(() => { $('#error-copy').textContent = '複製錯誤訊息'; }, 2500);
+});
+// 4. 停止檢查: what finished becomes the report
+$('#p-stop').addEventListener('click', async () => {
+  if (!following) return;
+  if (!(await ask('已經檢查完的技能會做成報告；還沒檢查的就不檢查了。', { title: '停止檢查？', ok: '停止', danger: true }))) return;
+  $('#p-stop').disabled = true;
+  try { await api('/api/cancel', { id: following }); } catch (err) { showError(err.message); $('#p-stop').disabled = false; }
+});

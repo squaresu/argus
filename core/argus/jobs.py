@@ -35,6 +35,7 @@ class Job:
         self.estimate = 0            # a scan: seconds the whole thing should take, once its size is known
         self.results = []            # a scan: the SkillResults, for the command line (python -m argus scan)
         self.items = []              # a scan: per skill {name, done, total, advice}, for the progress list
+        self.cancelled = False       # 停止檢查 was pressed: finish with what's done
         self.installed = False       # a scan: of skills already in use (wording: 可以繼續用 rather than 可以裝)
 
     def say(self, text):
@@ -54,7 +55,8 @@ class Job:
     def to_dict(self):
         return {k: getattr(self, k) for k in ('id', 'kind', 'label', 'status', 'done', 'total', 'current',
                                               'log', 'error', 'result', 'target')} | {
-            'elapsed': round(time.time() - self.started), 'remaining': self.remaining(), 'items': self.items}
+            'elapsed': round(time.time() - self.started), 'remaining': self.remaining(), 'items': self.items,
+            'cancelled': self.cancelled}
 
 
 def start(job, work):
@@ -153,6 +155,8 @@ def scan(kind, value, scanner_ids):
 
             def one(pair):
                 result, folder, scanner = pair
+                if job.cancelled:   # 停止檢查: what hasn't started doesn't start
+                    return
                 if not scanner.applies_to(folder):
                     outcome = Outcome(scanner.id, 'SKIPPED', note=f'{scanner.name}：沒有它要檢查的檔案。')
                 else:
@@ -162,6 +166,8 @@ def scan(kind, value, scanner_ids):
                             outcome = scanner.scan(folder, Path(w))
                         except Exception as err:   # a plug-in bug shouldn't sink the whole scan
                             outcome = Outcome(scanner.id, 'ERROR', error=f'{type(err).__name__}: {err}')
+                        if job.cancelled:
+                            return   # stopped while this ran: a cut-short run is neither a result nor a failure
                         if outcome.verdict != 'ERROR':
                             timing.record(scanner.id, time.time() - began)
                 roots = sorted({str(folder.resolve()), str(folder)}, key=len, reverse=True)
@@ -180,6 +186,14 @@ def scan(kind, value, scanner_ids):
 
             with ThreadPoolExecutor(PARALLEL) as pool:
                 list(pool.map(one, pairs))
+            if job.cancelled:   # a report of what got scanned before 停止檢查
+                tool_ids = {s.id for s in chosen}
+                kept = [(r, f) for r, f in zip(results, folders) if any(o.scanner in tool_ids for o in r.outcomes)]
+                if not kept:
+                    raise targets.TargetError('已經停止，還沒有任何技能檢查完，所以沒有產生報告。')
+                results, folders = [r for r, _ in kept], [f for _, f in kept]
+                title += f'（中途停止：只檢查了其中 {len(results)} 個）'
+                job.say('已經停止，正在用檢查完的部分產生報告…')
             order = [s.id for s in chosen]
             for r in results:   # the tools in list order, Argus's own checks after them
                 r.outcomes.sort(key=lambda o: order.index(o.scanner) if o.scanner in order else len(order))
@@ -195,6 +209,17 @@ def scan(kind, value, scanner_ids):
             targets.cleanup(tmp)
 
     return start(Job('scan', '掃描'), work)
+
+
+def cancel(job_id):
+    """停止檢查: no new tool runs start, the ones running are ended, and the report covers what finished."""
+    job = _jobs.get(job_id)
+    if job is None or job.kind != 'scan' or job.status != 'running':
+        raise targets.TargetError('沒有正在進行的檢查。')
+    job.cancelled = True
+    job.say('正在停止…')
+    tools.stop_all()
+    return job
 
 
 def estimate(kind, value, scanner_ids):

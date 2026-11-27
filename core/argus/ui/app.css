@@ -72,7 +72,7 @@ body {
 main { max-width: 980px; width: 100%; margin: 0 auto; padding: 22px 24px 40px; flex: 1; }
 .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px 22px; margin: 0 0 16px; box-shadow: var(--shadow); }
 .card-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 0 0 14px; }
-.card-head h2 { margin: 0; flex: 1; }
+.card-head h2 { margin: 0; flex: 1 0 auto; }
 .tools-summary { width: 100%; display: flex; align-items: center; gap: 12px; text-align: left; font: inherit; font-size: 15px; color: var(--ink);
   background: var(--bg); border: 1px solid var(--line); border-radius: 14px; padding: 12px 16px; cursor: pointer; }
 .tools-summary:hover { border-color: var(--pick-line); }
@@ -91,7 +91,7 @@ main { max-width: 980px; width: 100%; margin: 0 auto; padding: 22px 24px 40px; f
 .target input { position: absolute; opacity: 0; pointer-events: none; }
 .target:has(input:checked) { border-color: var(--pick-line); background: var(--pick); }
 .target:has(input:focus-visible) { outline: 2px solid var(--pick-line); outline-offset: 2px; }
-.ti { font-size: 20px; color: var(--pick-line); line-height: 1.2; }
+.ti { color: var(--pick-line); line-height: 1; display: block; height: 22px; margin-bottom: 4px; }
 .target b { font-size: 15px; } .target small { color: var(--muted); font-size: 13.5px; line-height: 1.55; }
 .detail { margin-top: 14px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .detail p { margin: 0; }
@@ -224,6 +224,26 @@ input[type=url]:focus { outline: none; border-color: var(--pick-line); }
 [data-theme="dark"] .switch input:checked + span::after { background: var(--navy-900); }
 .switch input:disabled + span { opacity: .45; } .switch input:disabled { cursor: not-allowed; }
 .switch input:focus-visible + span { outline: 2px solid var(--focus); outline-offset: 2px; }
+/* 5. an error that stays until closed */
+.error-box { display: flex; align-items: flex-start; gap: 12px; margin: 0 0 16px; padding: 14px 16px; border-radius: 14px;
+  background: color-mix(in srgb, var(--danger) 12%, var(--card)); border: 1px solid color-mix(in srgb, var(--danger) 50%, transparent); }
+.error-box > svg { color: var(--danger); flex: none; margin-top: 2px; }
+.error-box > div { flex: 1; } .error-box p { margin: 2px 0 0; font-size: 14px; word-break: break-word; white-space: pre-wrap; }
+.error-actions { display: flex; align-items: center; gap: 4px; flex: none; }
+/* 6. Argus's own confirm */
+.small-sheet { max-width: 420px; }
+.small-sheet .sheet-body h3 { font-size: 17px; margin: 18px 0 6px; }
+.small-sheet .sheet-body p { color: var(--muted); white-space: pre-line; }
+.btn.primary.danger { background: var(--danger); color: #fff; }
+[data-theme="dark"] .btn.primary.danger { color: var(--navy-900); }
+/* 10. a quiet note instead of a badge on every row */
+.newer { font-size: 13px; color: var(--muted); white-space: nowrap; }
+/* 9. 最近的報告 */
+.history-foot { display: flex; flex-wrap: wrap; gap: 8px 18px; }
+/* 8. once Argus has been used: a slimmer top */
+.returning .hero { padding-top: 6px; padding-bottom: 18px; }
+.returning .hero h1 { font-size: 20px; margin: 0; }
+.returning .hero p, .returning .scanline { display: none; }
 .has-update { position: relative; }
 .has-update::after { content: ""; position: absolute; top: -2px; right: -10px; width: 8px; height: 8px; border-radius: 50%; background: var(--mint); box-shadow: 0 0 6px var(--mint-bright); }
 #about-update { display: block; color: var(--link); font-size: 13px; }

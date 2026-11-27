@@ -194,6 +194,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send(409, {'error': '已經有工作在進行，請等它完成。'})
                 job = jobs.scan(data.get('kind'), data.get('value'), data.get('scanners') or [])
                 return self.send(200, job.to_dict())
+            if path == '/api/cancel':   # 停止檢查
+                return self.send(200, jobs.cancel(data.get('id') or '').to_dict())
             if path == '/api/estimate':   # before a scan: how many skills, roughly how long
                 return self.send(200, jobs.estimate(data.get('kind'), data.get('value'), data.get('scanners') or []))
             if path == '/api/claude-skill':   # put the Argus skill into Claude (or take it out)

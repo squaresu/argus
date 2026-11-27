@@ -3,8 +3,10 @@
 import os
 import platform
 import shutil
+import signal
 import subprocess
 import sys
+import threading
 from pathlib import Path
 
 HOME = Path.home()
@@ -60,17 +62,53 @@ def child_env():
     return env
 
 
+_running = set()            # programs started by run(), so 停止檢查 can end them
+_running_lock = threading.Lock()
+
+
 def run(cmd, timeout=900, cwd=None):
-    """Run a command; return (exit code, stdout, stderr). A command that can't start or times out gives code -1."""
-    kwargs = {'creationflags': 0x08000000} if IS_WIN else {}   # CREATE_NO_WINDOW: no console flashing up
+    """Run a command; return (exit code, stdout, stderr). A command that can't start, times out or is stopped
+    gives code -1."""
+    # its own process group, so stopping it also stops the helper programs it starts
+    kwargs = {'creationflags': 0x08000000 | 0x00000200} if IS_WIN else {'start_new_session': True}   # NO_WINDOW | NEW_PROCESS_GROUP
     try:
-        p = subprocess.run(cmd, cwd=cwd, env=child_env(), capture_output=True, timeout=timeout,
-                           stdin=subprocess.DEVNULL, **kwargs)
-    except subprocess.TimeoutExpired:
-        return -1, '', f'超過 {timeout // 60} 分鐘沒有完成，已經停止。'
+        p = subprocess.Popen(cmd, cwd=cwd, env=child_env(), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                             stdin=subprocess.DEVNULL, **kwargs)
     except OSError as err:
         return -1, '', str(err)
-    return p.returncode, p.stdout.decode('utf-8', 'replace'), p.stderr.decode('utf-8', 'replace')
+    with _running_lock:
+        _running.add(p)
+    try:
+        out, err = p.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        _kill_tree(p)
+        p.communicate()
+        return -1, '', f'超過 {timeout // 60} 分鐘沒有完成，已經停止。'
+    finally:
+        with _running_lock:
+            _running.discard(p)
+    return p.returncode, out.decode('utf-8', 'replace'), err.decode('utf-8', 'replace')
+
+
+def stop_all():
+    """End every program run() has going (停止檢查). Their run() calls return with an error."""
+    with _running_lock:
+        procs = list(_running)
+    for p in procs:
+        _kill_tree(p)
+
+
+def _kill_tree(p):
+    try:
+        if IS_WIN:
+            subprocess.run(['taskkill', '/F', '/T', '/PID', str(p.pid)], capture_output=True, creationflags=0x08000000)
+        else:
+            os.killpg(p.pid, signal.SIGKILL)
+    except (OSError, ProcessLookupError):
+        try:
+            p.kill()
+        except OSError:
+            pass
 
 
 def last_lines(text, n=3, limit=400):

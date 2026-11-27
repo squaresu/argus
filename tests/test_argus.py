@@ -1230,3 +1230,50 @@ class PluginCheck(unittest.TestCase):
         shutil.rmtree(p / 'hooks')
         shutil.rmtree(p / 'commands')
         self.assertEqual(plugins.collect(Path(tempfile.mkdtemp()), home), [])    # only skills: nothing extra
+
+
+class StopScan(unittest.TestCase):
+    def test_stop_keeps_what_finished(self):
+        from argus.scanners.base import Scanner
+
+        class Quick(Scanner):
+            id, name, exe = 'quick', 'Quick', 'true'
+
+            def installed(self):
+                return True
+
+            def version(self):
+                return '1'
+
+            def scan(self, skill_dir, work):
+                if skill_dir.name != 'first':                                   # the others take long
+                    tools.run(['sleep', '30'])
+                return Outcome('quick', 'SAFE')
+
+        root = Path(tempfile.mkdtemp())
+        for n in ('first', 'second', 'third'):
+            (root / n).mkdir()
+            (root / n / 'SKILL.md').write_text(f'---\nname: {n}\n---\n')
+        saved = scanners._cache, tools.reports_dir, reminder.recheck
+        d = Path(tempfile.mkdtemp())
+        scanners._cache, tools.reports_dir, reminder.recheck = [Quick()], (lambda: d), (lambda: None)
+        try:
+            job = jobs.scan('folder', str(root), ['quick'])
+            for _ in range(100):
+                if job.done:
+                    break
+                time.sleep(0.05)
+            started = time.time()
+            jobs.cancel(job.id)
+            for _ in range(200):
+                if job.status != 'running':
+                    break
+                time.sleep(0.05)
+        finally:
+            scanners._cache, tools.reports_dir, reminder.recheck = saved
+        self.assertLess(time.time() - started, 5)                                # the 30 s runs were ended
+        self.assertEqual(job.status, 'done')
+        self.assertEqual([r.name for r in job.results], ['first'])
+        self.assertTrue(job.result)
+        with self.assertRaises(targets.TargetError):
+            jobs.cancel(job.id)                                                  # nothing running any more

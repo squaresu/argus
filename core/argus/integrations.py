@@ -172,7 +172,7 @@ def _launchctl(*args):
 
 def set_autocheck(on):
     """Turn the automatic check on or off. Turning it on takes a baseline of what's installed now, so only
-    skills installed or changed from now on are checked (a full check is the 我所有的 Claude 技能 scan)."""
+    skills installed or changed from now on are checked (a full check is the 我的 Claude 技能 scan)."""
     if not autocheck_supported():
         raise OSError('自動檢查目前只支援 Mac。')
     path = agent_path()
