@@ -38,7 +38,13 @@ def _load_json(path: Path):
 
 
 def installed_plugins(home: Path | None = None):
-    """→ [(plugin name, its folder)] for the Claude Code plugins that are installed and not turned off.
+    """→ [(plugin name, its folder)] for the Claude Code plugins that are installed and not turned off."""
+    return [(name, folder) for name, folder, _ in plugins_with_labels(home)]
+
+
+def plugins_with_labels(home: Path | None = None):
+    """→ [(plugin name, its folder, label)]; the label says which plugin and version, e.g. figma@claude-plugins-official
+    1.4.0, so two copies of the same skill can be told apart.
 
     ~/.claude/plugins also holds each marketplace's whole catalog; those plugins are only on offer, so they're skipped.
     """
@@ -54,7 +60,8 @@ def installed_plugins(home: Path | None = None):
                    if isinstance(e, dict) and e.get('installPath') and Path(e['installPath']).is_dir()]
         if entries:   # one copy per plugin: the most recently installed or updated
             newest = max(entries, key=lambda e: str(e.get('lastUpdated') or e.get('installedAt') or ''))
-            found.append((ident.split('@')[0], Path(newest['installPath'])))
+            label = ident + (f" {newest['version']}" if newest.get('version') else '')
+            found.append((ident.split('@')[0], Path(newest['installPath']), label))
     known = any(isinstance(e, dict) and e.get('installPath') for v in (record.get('plugins') or {}).values()
                 for e in (v if isinstance(v, list) else [v]))
     if not known and (root / 'cache').is_dir():           # no usable record: what's been downloaded to run
@@ -68,13 +75,37 @@ def installed_plugins(home: Path | None = None):
             key = folder.parent
             if key not in latest or age > latest[key][2]:
                 latest[key] = ((_load_json(f) or {}).get('name') or folder.name, folder, age)
-        found += [(name, folder) for name, folder, _ in latest.values()]
+        # cache/<marketplace>/<plugin>/<version>
+        found += [(name, folder, f'{name}@{folder.parent.parent.name} {folder.name}') for name, folder, _ in latest.values()]
     seen, unique = set(), []
-    for name, folder in found:
+    for name, folder, label in found:
         if folder not in seen:
             seen.add(folder)
-            unique.append((name, folder))
+            unique.append((name, folder, label))
     return unique
+
+
+def skill_source(folder: Path, home: Path | None = None):
+    """Where an installed skill comes from: its plugin (and version), or the person's own skills folder."""
+    home = home or tools.HOME
+    real = folder.resolve()
+    for _, root, label in plugins_with_labels(home):
+        try:
+            if real.is_relative_to(root.resolve()):
+                return label
+        except OSError:
+            continue
+    return '自己的技能（~/.claude/skills）'
+
+
+def label_duplicates(results, folders, home: Path | None = None):
+    """Two installed skills with the same name (e.g. the same plugin from two marketplaces): add where each one
+    comes from to its name in the report, so it's clear which to keep."""
+    names = [r.name for r in results]
+    for r, folder in zip(results, folders):
+        if names.count(r.name) > 1:
+            r.duplicate = True
+            r.name = f'{r.name}（{skill_source(folder, home)}）'
 
 
 def find_skills(root: Path, max_depth=6):

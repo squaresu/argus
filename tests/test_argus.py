@@ -1048,3 +1048,30 @@ class GithubTitles(unittest.TestCase):
         self.assertEqual(targets.github_title('https://github.com/Leonxlnx/room-at-dawn?fbclid=IwdGRjcAVjpCFl'), 'Leonxlnx/room-at-dawn')
         self.assertEqual(targets.github_title('https://github.com/o/r/tree/main/skills/a/'), 'o/r/skills/a')
         self.assertEqual(targets.github_title('https://github.com/o/r.git'), 'o/r')
+
+
+class DuplicateSkills(unittest.TestCase):
+    def test_same_skill_from_two_plugins_is_labelled(self):
+        home = Path(tempfile.mkdtemp())
+        a = home / '.claude' / 'plugins' / 'cache' / 'official' / 'figma' / '1.4.0'
+        b = home / '.claude' / 'plugins' / 'cache' / 'figma-mkt' / 'figma' / '2.0.0'
+        own = home / '.claude' / 'skills' / 'notes'
+        for d in (a / 'skills' / 'figma-use', b / 'skills' / 'figma-use', own):
+            d.mkdir(parents=True)
+            (d / 'SKILL.md').write_text('---\nname: ' + d.name + '\n---\n')
+        (home / '.claude' / 'plugins' / 'installed_plugins.json').write_text(json.dumps({'version': 2, 'plugins': {
+            'figma@official': [{'installPath': str(a), 'version': '1.4.0'}],
+            'figma@figma-mkt': [{'installPath': str(b), 'version': '2.0.0'}]}}))
+        folders = [a / 'skills' / 'figma-use', b / 'skills' / 'figma-use', own]
+        results = [SkillResult(targets.skill_name(f), str(f)) for f in folders]
+        targets.label_duplicates(results, folders, home)
+        self.assertEqual([r.name for r in results],
+                         ['figma-use（figma@official 1.4.0）', 'figma-use（figma@figma-mkt 2.0.0）', 'notes'])
+        self.assertEqual(targets.skill_source(own, home), '自己的技能（~/.claude/skills）')
+
+    def test_report_says_so(self):
+        a = SkillResult('figma-use（figma@a 1.0）', '/a', [Outcome('bandit', 'SAFE')], duplicate=True)
+        b = SkillResult('figma-use（figma@b 2.0）', '/b', [Outcome('bandit', 'SAFE')], duplicate=True)
+        page = report.render('t', [a, b], scanners.all_scanners()[:1], {}, installed=True)
+        self.assertIn('有 1 個技能裝了不只一份', page)
+        self.assertIn('/plugin', report.claude_all([a, b], True, '個技能'))

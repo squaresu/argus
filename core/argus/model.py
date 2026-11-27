@@ -70,6 +70,7 @@ class SkillResult:
     change: dict = field(default_factory=dict)                # compared with the reviewed or last-scanned copy
     kind: str = 'skill'                                       # 'skill', or 'mcp' for an MCP server entry
     tracked: dict = field(default_factory=dict)               # MCP entries: a hash of the settings, in place of files
+    duplicate: bool = False                                   # another installed skill has the same name
 
     @property
     def verdict(self):

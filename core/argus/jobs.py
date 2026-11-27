@@ -129,6 +129,8 @@ def scan(kind, value, scanner_ids):
             title, folders = targets.resolve(kind, value, tmp)
             results = [SkillResult(targets.skill_name(f), str(f), key=skill_key(kind, value, f, tmp),
                                    capabilities=capabilities.analyze(f)) for f in folders]
+            if kind in ('claude', 'paths'):
+                targets.label_duplicates(results, folders)
             pairs = [(r, f, s) for r, f in zip(results, folders) for s in chosen]
             job.items = [{'name': r.name, 'done': 0, 'total': len(chosen), 'advice': None} for r in results]
             item_of = {id(r): item for r, item in zip(results, job.items)}

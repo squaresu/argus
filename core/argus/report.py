@@ -1,6 +1,7 @@
 """The report: one self-contained HTML page, readable without Argus running and safe to send to others."""
 
 import html
+import re
 import json
 from datetime import datetime
 
@@ -61,6 +62,15 @@ def summary_line(results, installed, unit):
              for a in ('no', 'ask') if counts[a]]
     worst = next(a for a in ADVICE_ORDER if counts[a])
     return worst, '、'.join(parts) + ('（' + '；'.join(named) + '）' if named else '')
+
+
+DUPLICATE_NOTE = ('有 {n} 個技能裝了不只一份，名字後面寫了各自來自哪個外掛。通常是同一個外掛從兩個地方裝了兩次，'
+                  '可以在 Claude Code 輸入 /plugin，到「已安裝」移除多的那一套。')
+
+
+def duplicates_html(results):
+    n = len({r.name.split('（')[0] for r in results if r.duplicate})
+    return f'<div class="dup-note">{e(DUPLICATE_NOTE.format(n=n))}</div>' if n else ''
 
 
 def summary_html(results, installed, unit):
@@ -295,6 +305,9 @@ def claude_all(results, installed, unit):
     """The whole report for Claude: full entries only where there's something to judge, the rest by name."""
     full = [claude_text(r, installed) for r in results if needs_detail(r)]
     quiet = [r.name for r in results if not needs_detail(r)]
+    n = len({r.name.split('（')[0] for r in results if r.duplicate})
+    if n:
+        full.insert(0, '（' + DUPLICATE_NOTE.format(n=n) + '）\n')
     if quiet:
         full.append(f'## 其他 {len(quiet)} {unit}\n- 沒有需要看的項目（只有「多半不用擔心」的提醒，或什麼都沒找到），細節省略：'
                     + '、'.join(quiet) + '\n')
@@ -326,7 +339,9 @@ def render(title, results, chosen, versions, when=None, installed=False):
     marks = [advice(r)[0] for r in results]
     tiles = ''.join(f'<div class="tile {ADVICE_CLASS[a]}"><b>{marks.count(a)}</b>{advice_word(a, installed)}</div>'
                     for a in ADVICE_ORDER) if len(results) > 1 else ''
-    used = ''.join(f'<span class="tool">{e(s.name)} <i>{e(versions.get(s.id, ""))}</i></span>' for s in chosen)
+    # some tools put their own name before the version ("bandit 1.9.4"); show just the number
+    used = ''.join(f'<span class="tool">{e(s.name)} <i>{e(re.sub(r"^[A-Za-z][^0-9]*?(?=[0-9])", "", versions.get(s.id, "")))}</i></span>'
+                   for s in chosen)
     ask = {
         'intro': (('我用 Argus 檢查了電腦上 Claude 等 AI 工具設定的 MCP 伺服器（只讀設定檔，沒有啟動它們），結果如下。\n'
                    '請幫我逐一判斷哪些設定真的有風險、該怎麼改，最後用一兩句話告訴我要不要繼續用。我不是工程師，請用白話回答。\n'
@@ -353,7 +368,7 @@ def render(title, results, chosen, versions, when=None, installed=False):
   <p class="sub">{e(title)} · {when:%Y/%m/%d %H:%M} · 共 {len(results)} {unit}</p>
   <div class="tools">使用的工具：{used}</div>
 </header>
-{summary_html(results, installed, unit)}
+{summary_html(results, installed, unit)}{duplicates_html(results)}
 {f'<div class="tiles">{tiles}</div>' if tiles else ''}
 <div class="hint"><p><b>怎麼看這份報告：</b>{HINT_MCP if is_mcp else HINT_SKILLS}</p>
 <button class="ask all" type="button">複製整份報告給 Claude 判斷</button></div>
@@ -413,11 +428,12 @@ h1{margin:0;font-size:28px;letter-spacing:.01em} .sub{color:var(--muted);margin:
 .verdict-box .vb-word{display:block;font-size:24px;line-height:1.35;margin:2px 0 4px}
 .verdict-box.safe .vb-word{color:var(--safe)} .verdict-box.caution .vb-word{color:var(--caution)} .verdict-box.danger .vb-word{color:var(--danger)}
 .verdict-box p{margin:4px 0} .verdict-box a{color:inherit}
+.dup-note{background:color-mix(in srgb,var(--caution) 12%,var(--card));border:1px solid color-mix(in srgb,var(--caution) 55%,transparent);border-radius:14px;padding:12px 16px;margin:0 0 16px;font-size:14px}
 .tiles{display:flex;gap:10px;flex-wrap:wrap;margin:0 0 16px}
 .tile{flex:1 1 120px;background:var(--card);border-radius:16px;padding:14px 18px;box-shadow:var(--shadow);color:var(--muted)}
 .tile b{display:block;font-size:30px;line-height:1.2;color:var(--ink)} .tile.safe b{color:var(--safe)} .tile.caution b{color:var(--caution)}
 .tile.danger b{color:var(--danger)} .tile.error b{color:var(--error)}
-.hint{background:var(--card);border-radius:16px;padding:14px 18px;margin:0 0 22px;box-shadow:var(--shadow);border-left:4px solid var(--mint)}
+.hint{background:var(--card);border-radius:16px;padding:14px 18px;margin:0 0 22px;box-shadow:var(--shadow);border:1px solid var(--line)}
 .hint p{margin:0 0 10px}
 .skill{background:var(--paper);border:1px solid var(--line);border-radius:18px;padding:18px 20px;margin:0 0 14px;box-shadow:var(--shadow);border-left:5px solid var(--safe)}
 .skill.caution{border-left-color:var(--caution)} .skill.danger{border-left-color:var(--danger)} .skill.error{border-left-color:var(--error)}
