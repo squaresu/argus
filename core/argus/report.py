@@ -393,7 +393,7 @@ def render(title, results, chosen, versions, when=None, installed=False):
         'skills': [claude_text(r, installed) for r in results],
         'all': claude_all(results, installed, unit),
     }
-    ask_json = json.dumps(ask, ensure_ascii=False).replace('</', '<\\/')
+    ask_json = json.dumps(ask, ensure_ascii=False).replace('<', '\\u003c')
     licences = '、'.join(f'{e(s.name)}（{e(s.vendor)}，{e(s.license)}）' for s in chosen)
     return f'''<!doctype html><html lang="zh-Hant" data-theme="dark"><head><meta charset="utf-8">
 <script>try{{if(localStorage.getItem('argus-theme')==='light')document.documentElement.dataset.theme='light'}}catch(e){{}}</script>

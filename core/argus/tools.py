@@ -47,6 +47,16 @@ def reports_dir():
     return d
 
 
+def report_file(name):
+    """A report in the reports folder by its file name → its path, or None for anything else (another folder,
+    C:\\…, a drive-relative D:x.html, a name that isn't a report)."""
+    name = str(name or '')
+    if not name.endswith('.html') or any(c in name for c in '/\\:\0') or name.startswith('.'):
+        return None
+    f = reports_dir() / name
+    return f if f.is_file() else None
+
+
 def find_exe(name):
     found = shutil.which(name, path=os.pathsep.join([str(TOOL_BIN), os.environ.get('PATH', '')]))
     return found
@@ -62,22 +72,31 @@ def child_env():
     return env
 
 
-_running = set()            # programs started by run(), so 停止檢查 can end them
+_running = {}            # program → the scan it belongs to (or None), so 停止檢查 can end that scan's programs
 _running_lock = threading.Lock()
+_local = threading.local()
+
+
+def for_job(job):
+    """Programs run() starts from this thread belong to job (a scan), until for_job(None)."""
+    _local.job = job
 
 
 def run(cmd, timeout=900, cwd=None):
     """Run a command; return (exit code, stdout, stderr). A command that can't start, times out or is stopped
     gives code -1."""
+    job = getattr(_local, 'job', None)
     # its own process group, so stopping it also stops the helper programs it starts
     kwargs = {'creationflags': 0x08000000 | 0x00000200} if IS_WIN else {'start_new_session': True}   # NO_WINDOW | NEW_PROCESS_GROUP
-    try:
-        p = subprocess.Popen(cmd, cwd=cwd, env=child_env(), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                             stdin=subprocess.DEVNULL, **kwargs)
-    except OSError as err:
-        return -1, '', str(err)
-    with _running_lock:
-        _running.add(p)
+    with _running_lock:     # checked together with registering, so 停止檢查 can't slip in between
+        if job is not None and getattr(job, 'cancelled', False):
+            return -1, '', '已經停止。'
+        try:
+            p = subprocess.Popen(cmd, cwd=cwd, env=child_env(), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                 stdin=subprocess.DEVNULL, **kwargs)
+        except OSError as err:
+            return -1, '', str(err)
+        _running[p] = job
     try:
         out, err = p.communicate(timeout=timeout)
     except subprocess.TimeoutExpired:
@@ -86,14 +105,15 @@ def run(cmd, timeout=900, cwd=None):
         return -1, '', f'超過 {timeout // 60} 分鐘沒有完成，已經停止。'
     finally:
         with _running_lock:
-            _running.discard(p)
+            _running.pop(p, None)
     return p.returncode, out.decode('utf-8', 'replace'), err.decode('utf-8', 'replace')
 
 
-def stop_all():
-    """End every program run() has going (停止檢查). Their run() calls return with an error."""
+def stop_all(job=None):
+    """End the programs run() has going for job (停止檢查), or all of them. Their run() calls return an error.
+    Call after setting job.cancelled, so nothing new starts for it."""
     with _running_lock:
-        procs = list(_running)
+        procs = [p for p, owner in _running.items() if job is None or owner is job]
     for p in procs:
         _kill_tree(p)
 

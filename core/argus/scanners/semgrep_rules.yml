@@ -136,7 +136,7 @@ rules:
     severity: ERROR
     message: Downloads something and runs it straight away
     paths: { include: ["*.sh", "*.bash", "*.zsh", "*.command"] }
-    pattern-regex: (curl|wget|fetch)\b[^\n|;]*\|\s*(sudo\s+)?(sh|bash|zsh|python3?|node|perl|ruby)\b|\b(sh|bash|zsh)\s+(-c\s+)?["']?\$\((curl|wget)\b|\b(sh|bash|zsh)\s+<\(\s*(curl|wget)\b
+    pattern-regex: (curl|wget|fetch)\b[^\n|;]*\|\s*(sudo\s+(-\S+\s+)*)?(sh|bash|zsh|python3?|node|perl|ruby)\b(?!\s+-m\s+json\.tool)|\b(sh|bash|zsh)\s+(-c\s+)?["']?\$\((curl|wget)\b|\b(sh|bash|zsh)\s+<\(\s*(curl|wget)\b
 
   - id: argus.sh-decode-and-run
     languages: [regex]

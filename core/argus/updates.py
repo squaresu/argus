@@ -248,19 +248,18 @@ def verify(new_app: Path, version):
 
 
 def swap(app: Path, new_app: Path):
-    """Put new_app where app is; the old one goes to Argus's folder so it can be put back."""
+    """Put new_app where app is; the old one goes to Argus's folder so it can be put back. Only renames touch
+    the app itself, so a failure (a file in use on Windows) leaves it whole, never half moved."""
     staged = app.parent / f'.{app.name}-update'
+    old = app.parent / f'.{app.name}-previous'
     backup = tools.state_dir() / 'previous' / app.name
-    shutil.rmtree(staged, ignore_errors=True)
-    shutil.rmtree(backup.parent, ignore_errors=True)
-    backup.parent.mkdir(parents=True)
+    for d in (staged, old):
+        shutil.rmtree(d, ignore_errors=True)
     try:
-        shutil.move(str(new_app), str(staged))      # next to the app, so the final step is a quick rename
-        shutil.move(str(app), str(backup))
+        shutil.move(str(new_app), str(staged))      # next to the app, so the swap itself is two quick renames
+        os.rename(app, old)
     except OSError as err:
         shutil.rmtree(staged, ignore_errors=True)
-        if backup.exists() and not app.exists():
-            shutil.move(str(backup), str(app))
         if tools.IS_MAC:
             raise UpdateError('macOS 不讓 Argus 替換自己。請到「系統設定 → 隱私權與安全性 → App 管理」允許 Argus，'
                               f'或手動下載新版。（{err}）')
@@ -268,9 +267,15 @@ def swap(app: Path, new_app: Path):
     try:
         os.rename(staged, app)
     except OSError as err:
-        shutil.move(str(backup), str(app))         # put the old one back: Argus keeps working as before
+        os.rename(old, app)                         # put the old one back: Argus keeps working as before
         shutil.rmtree(staged, ignore_errors=True)
         raise UpdateError(f'替換失敗，已經還原成原本的版本。（{err}）')
+    shutil.rmtree(backup.parent, ignore_errors=True)
+    try:                                            # keep the old version aside; not needed for the update itself
+        backup.parent.mkdir(parents=True)
+        shutil.move(str(old), str(backup))
+    except OSError:
+        shutil.rmtree(old, ignore_errors=True)
 
 
 def apply(job, app=None):

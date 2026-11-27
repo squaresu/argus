@@ -107,6 +107,9 @@ def state():
     }
 
 
+START_LOCK = threading.Lock()
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = f'{NAME}/{VERSION}'
 
@@ -135,9 +138,10 @@ class Handler(BaseHTTPRequestHandler):
     def body(self):
         n = int(self.headers.get('Content-Length') or 0)
         try:
-            return json.loads(self.rfile.read(n) or b'{}') if n else {}
+            data = json.loads(self.rfile.read(n) or b'{}') if n else {}
         except ValueError:
             return {}
+        return data if isinstance(data, dict) else {}
 
     # --- routes ---
     def do_GET(self):
@@ -165,9 +169,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(200, f.read_bytes(), ctype + ('; charset=utf-8' if ctype.startswith('text') or 'javascript' in ctype else ''))
             return self.send(404, {'error': 'not found'})
         if path.startswith('/reports/'):
-            name = unquote(path[len('/reports/'):])
-            f = tools.reports_dir() / name
-            if '/' not in name and '\\' not in name and name.endswith('.html') and f.is_file():
+            f = tools.report_file(unquote(path[len('/reports/'):]))
+            if f:
                 return self.send(200, f.read_bytes(), 'text/html; charset=utf-8')
             return self.send(404, {'error': '找不到這份報告。'})
         if path == '/api/state':
@@ -190,10 +193,11 @@ class Handler(BaseHTTPRequestHandler):
                 picked = native.pick_zip() if data.get('kind') == 'zip' else native.pick_folder()
                 return self.send(200, {'path': picked})
             if path == '/api/scan':
-                if jobs.busy():
-                    return self.send(409, {'error': '已經有工作在進行，請等它完成。'})
-                job = jobs.scan(data.get('kind'), data.get('value'), data.get('scanners') or [])
-                return self.send(200, job.to_dict())
+                with START_LOCK:   # the check and the start together, so two clicks can't both start
+                    if jobs.busy():
+                        return self.send(409, {'error': '已經有工作在進行，請等它完成。'})
+                    job = jobs.scan(data.get('kind'), data.get('value'), data.get('scanners') or [])
+                    return self.send(200, job.to_dict())
             if path == '/api/cancel':   # 停止檢查
                 return self.send(200, jobs.cancel(data.get('id') or '').to_dict())
             if path == '/api/estimate':   # before a scan: how many skills, roughly how long
@@ -208,16 +212,18 @@ class Handler(BaseHTTPRequestHandler):
                 except OSError as err:
                     raise targets.TargetError(str(err))
             if path == '/api/install':
-                if jobs.busy():
-                    return self.send(409, {'error': '已經有工作在進行，請等它完成。'})
-                sid = data.get('id')
-                # the install job checks the tool starts; record that before the job reports done
-                job = jobs.install(sid, on_checked=record_check)
-                return self.send(200, job.to_dict())
+                with START_LOCK:   # the check and the start together, so two clicks can't both start
+                    if jobs.busy():
+                        return self.send(409, {'error': '已經有工作在進行，請等它完成。'})
+                    sid = data.get('id')
+                    # the install job checks the tool starts; record that before the job reports done
+                    job = jobs.install(sid, on_checked=record_check)
+                    return self.send(200, job.to_dict())
             if path == '/api/install-all':   # 全部安裝 / 全部更新
-                if jobs.busy():
-                    return self.send(409, {'error': '已經有工作在進行，請等它完成。'})
-                return self.send(200, jobs.install_all(data.get('ids') or [], on_checked=record_check).to_dict())
+                with START_LOCK:   # the check and the start together, so two clicks can't both start
+                    if jobs.busy():
+                        return self.send(409, {'error': '已經有工作在進行，請等它完成。'})
+                    return self.send(200, jobs.install_all(data.get('ids') or [], on_checked=record_check).to_dict())
             if path == '/api/delete-report':
                 jobs.delete_report(data.get('file') or '')
                 return self.send(200, {'ok': True})
@@ -227,9 +233,10 @@ class Handler(BaseHTTPRequestHandler):
             if path == '/api/check-update':   # 「檢查更新」 in About
                 return self.send(200, updates.check())
             if path == '/api/update':
-                if jobs.busy():
-                    return self.send(409, {'error': '已經有工作在進行，請等它完成再更新。'})
-                return self.send(200, jobs.update().to_dict())
+                with START_LOCK:   # the check and the start together, so two clicks can't both start
+                    if jobs.busy():
+                        return self.send(409, {'error': '已經有工作在進行，請等它完成再更新。'})
+                    return self.send(200, jobs.update().to_dict())
             if path == '/api/relaunch':   # after an update: open the new Argus, then this one stops
                 app = updates.app_bundle()
                 if app is None:
@@ -243,10 +250,9 @@ class Handler(BaseHTTPRequestHandler):
             if path == '/api/open':
                 target = tools.reports_dir()
                 if data.get('file'):
-                    f = target / data['file']
-                    if '/' in data['file'] or not f.is_file():
+                    target = tools.report_file(data['file'])
+                    if not target:
                         return self.send(404, {'error': '找不到這份報告。'})
-                    target = f
                 native.open_path(target)
                 return self.send(200, {'ok': True})
         except (targets.TargetError, native.Unsupported) as err:

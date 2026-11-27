@@ -28,19 +28,19 @@ def claude_roots():
 
 
 def plugin_skill_roots(folder: Path):
-    """The folders Claude Code loads a plugin's skills from: those its plugin.json names under "skills", or
-    else skills/. Other folders in a plugin (an alternative skill set, examples, tests) are never loaded, so
-    they aren't scanned either."""
+    """The folders Claude Code loads a plugin's skills from: skills/, plus any its plugin.json names under
+    "skills" (named paths add to the default, they don't replace it). Other folders in a plugin (an alternative
+    skill set, examples, tests) are never loaded, so they aren't scanned either."""
     manifest = _load_json(folder / '.claude-plugin' / 'plugin.json') or _load_json(folder / 'plugin.json') or {}
     named = manifest.get('skills') if isinstance(manifest, dict) else None
     paths = [named] if isinstance(named, str) else [p for p in named if isinstance(p, str)] if isinstance(named, list) else []
-    roots = []
+    roots = [folder / 'skills']
     base = folder.resolve()
     for p in paths:
         root = (folder / p).resolve()
-        if root.is_relative_to(base):          # a plugin can only point inside itself
+        if root.is_relative_to(base) and root not in {r.resolve() for r in roots}:   # only inside the plugin
             roots.append(root)
-    return roots or [folder / 'skills']
+    return roots
 
 
 def claude_skills():
@@ -49,7 +49,7 @@ def claude_skills():
 
 def _load_json(path: Path):
     try:
-        return json.loads(path.read_text(encoding='utf-8'))
+        return json.loads(path.read_text(encoding='utf-8-sig'))
     except (OSError, ValueError):
         return None
 
@@ -193,7 +193,9 @@ def download(url, dest: Path):
     except TargetError:
         raise
     except Exception as err:
-        raise TargetError(f'下載失敗，請確認網址正確、而且是公開的 repo。（{err}）')
+        failed = TargetError(f'下載失敗，請確認網址正確、而且是公開的 repo。（{err}）')
+        failed.not_found = getattr(err, 'code', None) == 404
+        raise failed
 
 
 def github_title(url):
@@ -213,10 +215,19 @@ def github(url, work: Path):
     owner, repo, kind, ref, sub = m.groups()
     repo = repo.removesuffix('.git')
     zip_path = work / 'github.zip'
-    download(f'https://github.com/{owner}/{repo}/archive/{ref or "HEAD"}.zip', zip_path)
+    # a branch name can hold slashes (feature/x): try longer and longer names until GitHub knows one
+    parts = [ref] + [p for p in (sub or '').split('/') if p] if ref else ['HEAD']
+    for k in range(1, min(len(parts), 6) + 1):
+        try:
+            download(f'https://github.com/{owner}/{repo}/archive/{"/".join(parts[:k])}.zip', zip_path)
+            sub = '/'.join(parts[k:]) if ref else sub
+            break
+        except TargetError as err:
+            if not getattr(err, 'not_found', False) or k == min(len(parts), 6):
+                raise
     root = single_folder(safe_extract(zip_path, work / 'github'))
     target = root / urllib.parse.unquote(sub.strip('/')) if sub else root
-    if kind == 'blob':          # a link to a file inside the skill: scan its folder
+    if kind == 'blob' and target != root:   # a link to a file inside the skill: scan its folder
         target = target.parent
     if not target.resolve().is_relative_to(root.resolve()) or not target.exists():
         raise TargetError(f'在下載的內容裡找不到這個路徑：{sub}')
@@ -243,7 +254,9 @@ def resolve(kind, value, work: Path):
     if kind == 'github':
         return github_title(value), expand(github(value, work))
     if kind == 'paths':   # given skill folders, already on this computer (the automatic check of new skills)
-        folders = [Path(v) for v in (value or []) if Path(v).is_dir()]
+        if not isinstance(value, list):
+            raise TargetError('不認得的掃描對象。')
+        folders = [Path(v) for v in value if isinstance(v, str) and v and Path(v).is_dir()]
         if not folders:
             raise TargetError('要檢查的技能資料夾都不見了。')
         return '新裝或更新的 Claude 技能', folders
@@ -254,7 +267,7 @@ def skill_name(folder: Path):
     """The name in SKILL.md's front matter, or the folder name."""
     for name in ('SKILL.md', 'skill.md'):
         try:
-            head = (folder / name).read_text(encoding='utf-8', errors='replace')[:4000]
+            head = (folder / name).read_text(encoding='utf-8-sig', errors='replace')[:4000]
         except OSError:
             continue
         m = re.search(r'^---\s*\n(.*?)\n---', head, re.S)

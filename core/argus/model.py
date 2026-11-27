@@ -75,9 +75,10 @@ class SkillResult:
     @property
     def verdict(self):
         decided = [o.verdict for o in self.outcomes if o.verdict in VERDICTS]
-        if decided:
+        # Argus's own file check can't vouch for a skill alone: with every real tool failed, it's unfinished
+        if any(o.verdict in VERDICTS and o.scanner != 'argus-files' for o in self.outcomes):
             return min(decided, key=VERDICTS.index)
-        return 'ERROR' if any(o.verdict == 'ERROR' for o in self.outcomes) else 'SAFE'
+        return 'ERROR' if any(o.verdict == 'ERROR' for o in self.outcomes) else min(decided or ['SAFE'], key=VERDICTS.index)
 
     @property
     def findings(self):

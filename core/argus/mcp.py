@@ -34,13 +34,57 @@ CODE_FILE = re.compile(r'\.(m?[jt]sx?|cjs|py|rb|sh|go|jar|exe|php)$', re.I)
 SHELLS = {'sh', 'bash', 'zsh', 'cmd', 'cmd.exe', 'powershell', 'powershell.exe', 'pwsh'}
 LOCAL_HOSTS = re.compile(r'^https?://(localhost|127\.0\.0\.1|\[::1\]|0\.0\.0\.0)(:\d+)?(/|$)', re.I)
 SECRET_NAME = re.compile(r'KEY|TOKEN|SECRET|PASSWORD|PASSWD|AUTH|CREDENTIAL|COOKIE|SESSION', re.I)
-SECRET_VALUE = re.compile(r'^(sk-|ghp_|gho_|github_pat_|xox[abpr]-|AKIA|AIza|glpat-|ey[A-Za-z0-9_-]{10,}\.)')
+SECRET_VALUE = re.compile(r'^(sk-|sk_live_|sk_test_|rk_live_|ghp_|gho_|ghs_|github_pat_|xox[abpr]-|AKIA|AIza|glpat-|'
+                          r'ey[A-Za-z0-9_-]{10,}\.)')
+SECRET_FLAG = re.compile(r'^--?([\w-]*(key|token|secret|password|passwd|auth|credential|cookie)[\w-]*)(=(.*))?$', re.I)
+LONG_TOKEN = re.compile(r'^[A-Za-z0-9_\-]{24,}$')
 REFERENCE = re.compile(r'^\$\{?[A-Za-z_]\w*\}?$|^\{\{.*\}\}$|^\$\{\w+:-?.*\}$')
 
 
 def mask(value):
     value = str(value)
     return value if len(value) <= 8 else value[:4] + '••••••' + value[-2:]
+
+
+def _secret_looking(value):
+    return bool(SECRET_VALUE.match(value)) or (bool(LONG_TOKEN.match(value)) and bool(re.search(r'\d', value))
+                                                and bool(re.search(r'[A-Za-z]', value)))
+
+
+def redact_url(url):
+    """A URL to show: the password, secret-looking query values and long tokens in the path hidden."""
+    url = re.sub(r'^(\w+://)([^/@:\s]*):([^/@\s]+)@', lambda m: f'{m.group(1)}{m.group(2)}:••••••@', url)
+
+    def query(m):
+        k, v = m.group(1), m.group(2)
+        return f'{k}={mask(v)}' if v and (SECRET_NAME.search(k) or _secret_looking(v)) else m.group(0)
+    head, sep, rest = url.partition('?')
+    head = '/'.join(mask(part) if _secret_looking(part) else part for part in head.split('/'))
+    return head + sep + re.sub(r'([^&=#]+)=([^&#]*)', query, rest)
+
+
+def redact_args(args):
+    """Command-line arguments to show: values after --token and the like, KEY=value secrets and keys hidden."""
+    out, hide_next = [], False
+    for a in args:
+        if hide_next:
+            out.append(mask(a))
+            hide_next = False
+            continue
+        flag = SECRET_FLAG.match(a)
+        if flag and flag.group(3):
+            out.append(f'--{flag.group(1)}={mask(flag.group(4))}' if flag.group(4) else a)
+        elif flag:
+            out.append(a)
+            hide_next = True
+        elif re.match(r'^[A-Za-z_][\w.-]*=', a) and SECRET_NAME.search(a.split('=', 1)[0]):
+            k, v = a.split('=', 1)
+            out.append(f'{k}={mask(v)}' if v and not REFERENCE.match(v) else a)
+        elif re.match(r'^\w+://', a):
+            out.append(redact_url(a))
+        else:
+            out.append(mask(a) if _secret_looking(a) else a)
+    return out
 
 
 def _load(path: Path):
@@ -196,36 +240,39 @@ def inspect(name, where, cfg):
         caps.append({'id': cid, 'icon': icon, 'label': label, 'what': what,
                      'evidence': [{'file': where, 'line': None, 'text': e} for e in evidence][:3]})
 
-    shown = ' '.join([command] + [mask(a) if SECRET_VALUE.match(a) else a for a in args])[:300]
+    raw_args, args = args, redact_args(args)     # what's shown never carries a key; checks read the raw values
+    raw_url, url = url, redact_url(url)
+    shown = ' '.join([command] + args)[:300]
     if url:
-        local = bool(LOCAL_HOSTS.match(url))
-        host = re.sub(r'^\w+://([^/]+).*$', r'\1', url)
+        local = bool(LOCAL_HOSTS.match(raw_url))
+        host = re.sub(r'^\w+://(?:[^/@]*@)?([^/?#]+).*$', r'\1', raw_url)
         if not local:
             cap('network', '🌐', '連網', '你和 Claude 的對話內容中，跟這個工具有關的部分會送到這個服務。', [f'連到 {host}'])
-        if url.lower().startswith('http://') and not local:
+        if raw_url.lower().startswith('http://') and not local:
             finding('連線沒有加密', '用 http:// 連到外部服務，傳輸內容（包括金鑰）可能被同一個網路上的人看到。',
                     '改成 https:// 的網址；沒有 https 的服務就不建議使用。', 'HIGH', 'MCP-HTTP', url)
     else:
         cap('exec', '⚙️', '執行程式', '這個 MCP 伺服器是在你的電腦上執行的程式，有你的帳號能做的所有權限。', [shown])
         cap('autorun', '⚡', '自動執行', 'Claude 一打開就會自動啟動它，不用你叫它。', ['跟著 Claude 一起啟動'])
     # what runs
-    pkg = _download(exe, args)
-    if pkg and _git_source(pkg):
+    raw_pkg = _download(exe, raw_args)
+    pkg = redact_url(raw_pkg) if raw_pkg else raw_pkg
+    if pkg and _git_source(raw_pkg):
         cap('install', '📦', '安裝套件', '每次啟動時會從 GitHub 下載程式碼來執行。', [pkg])
         cap('network', '🌐', '連網', '啟動時會從網路下載程式。', [f'從 {pkg} 下載'])
-        if not _git_pinned(pkg):
+        if not _git_pinned(raw_pkg):
             finding('每次啟動都抓 GitHub 上最新的程式碼', f'它直接從 {pkg} 下載程式，沒有經過套件庫，也沒有指定版本。'
                     '作者推上去的任何改動（或帳號被盜後別人推的改動），你下次啟動時就會執行，中間沒有人檢查。',
                     '沒在用就關掉；要用的話，請懂的人把它固定在某個版本（網址後面加 @版本號）。', 'MEDIUM', 'MCP-GIT-SOURCE', shown)
     elif pkg:
         cap('install', '📦', '安裝套件', '每次啟動時會從網路下載套件來執行。', [f'{exe} {pkg}'])
         cap('network', '🌐', '連網', '啟動時會從網路下載程式。', [f'從套件庫下載 {pkg}'])
-        if not _pkg_pinned(exe, pkg):
+        if not _pkg_pinned(exe, raw_pkg):
             finding('版本沒鎖定，會自動換成最新版', f'每次啟動都會下載 {pkg} 的最新版。作者（或盜用作者帳號的人）發佈新版時，'
                     '你的電腦會直接執行新版，中間沒有人檢查。',
                     f'把版本寫死，例如 {pkg}@1.2.3（Python 套件寫成 {pkg}==1.2.3），想更新時再手動改。', 'MEDIUM',
                     'MCP-UNPINNED', shown,
-                    calm='這是大公司或 MCP 官方發佈的套件，被動手腳的機會很低；想更保險再鎖定版本。' if WELL_KNOWN.match(pkg) else '')
+                    calm='這是大公司或 MCP 官方發佈的套件，被動手腳的機會很低；想更保險再鎖定版本。' if WELL_KNOWN.match(raw_pkg) else '')
     # chat apps: other people's messages reach Claude
     plugin = where.split('：', 1)[-1].lower() if where.startswith('Claude Code 外掛：') else ''
     app = MESSAGING.get(name.lower()) or MESSAGING.get(plugin)
@@ -287,6 +334,9 @@ def inspect(name, where, cfg):
             value = v.split(' ', 1)[-1] if v.lower().startswith(('bearer ', 'token ')) else v
             if value and not REFERENCE.match(value) and (SECRET_NAME.search(k) or SECRET_VALUE.match(value)):
                 leaked.append(f'{label} {k} = {mask(value)}')
+    leaked += [f'啟動參數 {a}' for raw, a in zip(raw_args, args) if a != raw]
+    if url != raw_url:
+        leaked.append(f'連線網址 {url}')
     if leaked:
         cap('secrets', '🔑', '碰觸機密或 Claude 設定', '設定檔裡交給了它金鑰或密碼。', leaked)
         finding('金鑰直接寫在設定檔裡', '金鑰以明文存在設定檔裡，設定檔被備份、分享或被其他程式讀到時，金鑰就跟著外流。',

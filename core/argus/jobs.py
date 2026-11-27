@@ -106,6 +106,8 @@ def track(results, folders):
     store = reviews.Store()
     snapshots = {}
     for r, folder in zip(results, folders):
+        if folder is None:          # a plugin Argus couldn't read: nothing to compare
+            continue
         snap = reviews.snapshot(folder, r.findings, files=r.tracked or None)
         r.change = store.compare(r.key, snap)
         known = set(r.change.get('known', []))
@@ -126,6 +128,7 @@ def scan(kind, value, scanner_ids):
 
     def work(job):
         tmp = Path(tempfile.mkdtemp(prefix='argus-'))
+        tools.for_job(job)
         try:
             job.say('正在準備要掃描的內容…')
             title, folders = targets.resolve(kind, value, tmp)
@@ -141,9 +144,11 @@ def scan(kind, value, scanner_ids):
                     results.append(r)
                     folders.append(f)
             # a plugin's leftover parts have no SKILL.md: the skill scanners have nothing to read there
-            uses = lambda r, s: not (r.kind == 'plugin' and s.id in ('skillspector', 'cisco'))
-            pairs = [(r, f, s) for r, f in zip(results, folders) for s in chosen if uses(r, s)]
-            job.items = [{'name': r.name, 'done': 0, 'total': sum(uses(r, s) for s in chosen), 'advice': None} for r in results]
+            # (a plugin Argus couldn't read has no folder: nothing for the scanners)
+            uses = lambda r, f, s: f is not None and not (r.kind == 'plugin' and s.id in ('skillspector', 'cisco'))
+            pairs = [(r, f, s) for r, f in zip(results, folders) for s in chosen if uses(r, f, s)]
+            job.items = [{'name': r.name, 'done': 0, 'total': sum(uses(r, f, s) for s in chosen), 'advice': None}
+                         for r, f in zip(results, folders)]
             item_of = {id(r): item for r, item in zip(results, job.items)}
             job.total = len(pairs)
             job.estimate = time.time() - job.started + timing.estimate(
@@ -157,6 +162,7 @@ def scan(kind, value, scanner_ids):
                 result, folder, scanner = pair
                 if job.cancelled:   # 停止檢查: what hasn't started doesn't start
                     return
+                tools.for_job(job)  # so 停止檢查 ends this scan's programs, and only them
                 if not scanner.applies_to(folder):
                     outcome = Outcome(scanner.id, 'SKIPPED', note=f'{scanner.name}：沒有它要檢查的檔案。')
                 else:
@@ -192,10 +198,10 @@ def scan(kind, value, scanner_ids):
                 if not kept:
                     raise targets.TargetError('已經停止，還沒有任何技能檢查完，所以沒有產生報告。')
                 results, folders = [r for r, _ in kept], [f for _, f in kept]
-                for r in results:   # say which tools never got to a skill, so its conclusion isn't taken as complete
+                for r, f in kept:   # say which tools never got to a skill, so its conclusion isn't taken as complete
                     ran = {o.scanner for o in r.outcomes}
                     r.outcomes += [Outcome(s.id, 'ERROR', error='按了停止檢查，這個工具沒有跑完。')
-                                   for s in chosen if s.id not in ran and uses(r, s)]
+                                   for s in chosen if s.id not in ran and uses(r, f, s)]
                 title += f'（中途停止：只檢查了其中 {len(results)} 個）'
                 job.say('已經停止，正在用檢查完的部分產生報告…')
             order = [s.id for s in chosen]
@@ -220,9 +226,10 @@ def cancel(job_id):
     job = _jobs.get(job_id)
     if job is None or job.kind != 'scan' or job.status != 'running':
         raise targets.TargetError('沒有正在進行的檢查。')
-    job.cancelled = True
+    with tools._running_lock:   # no tool run of this scan starts after this
+        job.cancelled = True
     job.say('正在停止…')
-    tools.stop_all()
+    tools.stop_all(job)
     return job
 
 
@@ -258,10 +265,10 @@ def scan_mcp():
 
 def mark_reviewed(report_file, key, reviewed=True):
     """標記為已看過 (or undo it) for one skill, using the snapshot saved with that report."""
-    meta = tools.reports_dir() / (Path(report_file).stem + '.json')
+    report = tools.report_file(report_file)
     try:
-        entry = json.loads(meta.read_text(encoding='utf-8'))['snapshots'][key]
-    except (OSError, ValueError, KeyError):
+        entry = json.loads(report.with_suffix('.json').read_text(encoding='utf-8'))['snapshots'][key]
+    except (AttributeError, OSError, ValueError, KeyError, TypeError):
         raise targets.TargetError('這份報告比較舊，沒有記錄可以比對的資料。請重新掃描一次再標記。')
     store = reviews.Store()
     store.mark(key, entry['name'], entry['snapshot'], reviewed)
@@ -342,11 +349,11 @@ def install_all(scanner_ids, on_checked=None):
 
 def delete_report(file):
     """Delete one report and its record (from 最近的報告)."""
-    folder = tools.reports_dir()
-    if '/' in file or '\\' in file or not file.endswith('.html') or not (folder / file).is_file():
+    f = tools.report_file(file)
+    if not f:
         raise targets.TargetError('找不到這份報告。')
-    (folder / file).unlink()
-    (folder / (Path(file).stem + '.json')).unlink(missing_ok=True)
+    f.unlink()
+    f.with_suffix('.json').unlink(missing_ok=True)
 
 
 # --- updating Argus itself ---

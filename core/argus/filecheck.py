@@ -27,13 +27,14 @@ LOCKS = {'package-lock.json', 'npm-shrinkwrap.json', 'yarn.lock', 'pnpm-lock.yam
 PINNED_REQ = re.compile(r'^\s*[A-Za-z0-9._\[\],-]+\s*===?\s*[\w.*+!-]+')
 
 
-def _files(folder: Path):
+def _files(folder: Path, cut):
     count = 0
     for d, dirs, files in os.walk(folder):
         dirs[:] = [x for x in dirs if x not in SKIP_DIRS]
         for name in files:
             count += 1
             if count > MAX_FILES:
+                cut.append(True)
                 return
             yield Path(d) / name
 
@@ -48,10 +49,17 @@ def _magic(path: Path):
 
 
 def check(folder: Path) -> Outcome:
-    folder = Path(folder)
+    """Never raises: an odd file shouldn't stop the whole scan."""
+    try:
+        return _check(Path(folder))
+    except Exception as err:
+        return Outcome(SCANNER, 'ERROR', error=f'{type(err).__name__}: {err}')
+
+
+def _check(folder: Path) -> Outcome:
     unreadable, archives, findings = [], [], []
-    package_json, has_lock = [], set()
-    for path in _files(folder):
+    package_json, has_lock, cut = [], set(), []
+    for path in _files(folder, cut):
         rel = path.relative_to(folder).as_posix()
         name, ext = path.name.lower(), path.suffix.lower()
         if name in LOCKS:
@@ -75,10 +83,14 @@ def check(folder: Path) -> Outcome:
             archives.append(rel)
     for path in package_json:
         try:
-            data = json.loads(path.read_text(encoding='utf-8'))
+            data = json.loads(path.read_text(encoding='utf-8-sig'))
         except (OSError, ValueError):
             continue
-        deps = {**(data.get('dependencies') or {}), **(data.get('optionalDependencies') or {})} if isinstance(data, dict) else {}
+        deps = {}
+        for key in ('dependencies', 'optionalDependencies'):
+            value = data.get(key) if isinstance(data, dict) else None
+            if isinstance(value, dict):
+                deps.update(value)
         if deps and path.parent not in has_lock:
             findings.append(Finding(
                 scanner=SCANNER, title='套件沒有鎖定版本', severity='LOW', file=path.relative_to(folder).as_posix(),
@@ -97,7 +109,8 @@ def check(folder: Path) -> Outcome:
             rule='ARCHIVE', what=f'技能裡有 {len(archives)} 個壓縮檔，裡面的內容沒有被檢查到。',
             tip='看技能說明有沒有交代這些壓縮檔是做什麼的；技能如果會自己解開並執行裡面的東西，要特別小心。'))
     real = [f for f in findings if not f.calm]
-    return Outcome(SCANNER, 'CAUTION' if any(f.severity == 'MEDIUM' for f in real) else 'SAFE', findings)
+    note = f'檔案超過 {MAX_FILES} 個，只看了前 {MAX_FILES} 個。' if cut else ''
+    return Outcome(SCANNER, 'CAUTION' if any(f.severity == 'MEDIUM' for f in real) else 'SAFE', findings, note=note)
 
 
 def _loose_requirements(path: Path):
@@ -111,5 +124,5 @@ def _loose_requirements(path: Path):
         if not line or line.startswith(('-', 'git+', 'http')):
             continue
         if not PINNED_REQ.match(line):
-            loose.append(re.split(r'[<>=!~;\s\[]', line, 1)[0])
+            loose.append(re.split(r'[<>=!~;\s\[]', line, maxsplit=1)[0])
     return loose
