@@ -24,6 +24,7 @@ import zipfile
 from pathlib import Path
 
 from . import VERSION, tools
+from .i18n import _
 
 REPO = 'squaresu/argus'
 RELEASES = f'https://github.com/{REPO}/releases/latest'
@@ -103,7 +104,7 @@ def fetch():
     tag_url = location(RELEASES)
     m = re.search(r'/releases/tag/v?([^/?#]+)$', tag_url)
     if not m:
-        raise UpdateError('GitHub 沒有回答最新的版本。')
+        raise UpdateError(_('GitHub 沒有回答最新的版本。'))
     latest = m.group(1)
     asset = f'{DOWNLOADS}v{latest}/Argus-{"win" if tools.IS_WIN else "mac"}-{latest}.zip'
     if not location(asset):   # the release has no zip for this system attached
@@ -114,12 +115,12 @@ def fetch():
 def why_failed(err):
     """The reason a check or download couldn't reach GitHub, in plain words."""
     if isinstance(err, urllib.error.HTTPError) and err.code in (403, 429):
-        return 'GitHub 暫時限制了查詢次數，過一陣子會自己恢復。'
+        return _('GitHub 暫時限制了查詢次數，過一陣子會自己恢復。')
     if is_certificate_error(err):
-        return '連線的安全憑證沒辦法驗證，常見於公司網路的資安閘道。可以請 IT 協助，或改用手動更新。'
+        return _('連線的安全憑證沒辦法驗證，常見於公司網路的資安閘道。可以請 IT 協助，或改用手動更新。')
     if isinstance(err, UpdateError):
         return str(err)
-    return '連不上 GitHub，可能是沒有網路，或公司網路擋住了 GitHub。'
+    return _('連不上 GitHub，可能是沒有網路，或公司網路擋住了 GitHub。')
 
 
 def is_argus_copy(path: Path):
@@ -139,11 +140,11 @@ def why_manual(app=None):
     """Why a one-click update can't work here, or ''."""
     app = app or app_bundle()
     if not (tools.IS_MAC or tools.IS_WIN) or app is None:
-        return '這個版本的 Argus 不能自動更新，請手動下載新版。'
+        return _('這個版本的 Argus 不能自動更新，請手動下載新版。')
     if tools.IS_MAC and ('AppTranslocation' in str(app) or not os.access(app.parent, os.W_OK)):
-        return 'Argus 不在「應用程式」資料夾裡（或沒有權限修改），沒辦法自動更新。請先把 Argus 拖到「應用程式」資料夾，或手動下載新版。'
+        return _('Argus 不在「應用程式」資料夾裡（或沒有權限修改），沒辦法自動更新。請先把 Argus 拖到「應用程式」資料夾，或手動下載新版。')
     if tools.IS_WIN and not os.access(app.parent, os.W_OK):
-        return 'Argus 放在沒有權限修改的資料夾裡，沒辦法自動更新。請把 Argus 資料夾搬到「文件」之類的地方，或手動下載新版。'
+        return _('Argus 放在沒有權限修改的資料夾裡，沒辦法自動更新。請把 Argus 資料夾搬到「文件」之類的地方，或手動下載新版。')
     return ''
 
 
@@ -168,7 +169,7 @@ def check(fetcher=None):
         except (OSError, ValueError, KeyError):
             _result.update(checked=True, failed=True, error=why_failed(err))   # nothing saved: no notice
             return _result
-    reason = why_manual() if asset else '這次的發佈沒有附上這個系統用的 zip，請手動下載。'
+    reason = why_manual() if asset else _('這次的發佈沒有附上這個系統用的 zip，請手動下載。')
     _result.update(checked=True, failed=False, error='', latest=latest, url=url, asset=asset, newer=is_newer(latest),
                    auto=not reason, why_manual=reason)
     return _result
@@ -182,7 +183,7 @@ def status():
 
 def download(url, dest: Path):
     if not url.startswith(DOWNLOADS):
-        raise UpdateError('更新檔不是來自 Argus 官方的 GitHub 發佈頁，已經停止。')
+        raise UpdateError(_('更新檔不是來自 Argus 官方的 GitHub 發佈頁，已經停止。'))
     req = urllib.request.Request(url, headers={'User-Agent': f'Argus/{VERSION}'})
     try:
         with urllib.request.urlopen(req, timeout=60) as resp, dest.open('wb') as out:
@@ -190,7 +191,7 @@ def download(url, dest: Path):
             while chunk := resp.read(1 << 20):
                 size += len(chunk)
                 if size > MAX_ZIP:
-                    raise UpdateError('更新檔大得不合理，已經停止。')
+                    raise UpdateError(_('更新檔大得不合理，已經停止。'))
                 out.write(chunk)
     except UpdateError:
         raise
@@ -200,7 +201,7 @@ def download(url, dest: Path):
             p = _curl(['-fL', '-o', str(dest), url], 120)
             if p.returncode == 0 and dest.is_file() and dest.stat().st_size <= MAX_ZIP:
                 return
-        raise UpdateError(f'下載新版失敗：{why_failed(err)}')
+        raise UpdateError(_('下載新版失敗：{err}', err=why_failed(err)))
 
 
 def unpack(zip_path: Path, dest: Path):
@@ -211,7 +212,7 @@ def unpack(zip_path: Path, dest: Path):
             for info in zf.infolist():
                 target = (dest / info.filename).resolve()
                 if not target.is_relative_to(root):
-                    raise UpdateError('更新檔裡有不正常的路徑，已經停止。')
+                    raise UpdateError(_('更新檔裡有不正常的路徑，已經停止。'))
                 if info.filename.startswith('__MACOSX/'):
                     continue
                 zf.extract(info, dest)
@@ -219,10 +220,10 @@ def unpack(zip_path: Path, dest: Path):
                 if mode and not info.is_dir():
                     os.chmod(target, mode)
     except zipfile.BadZipFile:
-        raise UpdateError('下載的更新檔壞掉了，請再試一次。')
+        raise UpdateError(_('下載的更新檔壞掉了，請再試一次。'))
     apps = [p for p in dest.iterdir() if p.is_dir() and is_argus_copy(p)]
     if len(apps) != 1:
-        raise UpdateError('更新檔裡找不到 Argus，已經停止。')
+        raise UpdateError(_('更新檔裡找不到 Argus，已經停止。'))
     return apps[0]
 
 
@@ -237,13 +238,14 @@ def verify(new_app: Path, version):
         init = new_app / 'Contents' / 'Resources' / 'core' / 'argus' / '__init__.py'
         ident = new_app / 'Contents' / 'Info.plist'
     if not (run.is_file() and init.is_file() and ident.is_file()):
-        raise UpdateError('更新檔的內容不完整，已經停止。')
+        raise UpdateError(_('更新檔的內容不完整，已經停止。'))
     if APP_ID not in ident.read_text(encoding='utf-8', errors='replace'):
-        raise UpdateError('更新檔不是 Argus，已經停止。')
+        raise UpdateError(_('更新檔不是 Argus，已經停止。'))
     m = re.search(r"^VERSION = '([^']+)'", init.read_text(encoding='utf-8'), re.M)
     found = m.group(1) if m else ''
     if found != version or not is_newer(found):
-        raise UpdateError(f'更新檔的版本（{found or "不明"}）跟預期的 {version} 不一樣，已經停止。')
+        raise UpdateError(_('更新檔的版本（{found}）跟預期的 {version} 不一樣，已經停止。', found=found or _('不明'),
+                                  version=version))
     os.chmod(run, 0o755)
 
 
@@ -261,15 +263,16 @@ def swap(app: Path, new_app: Path):
     except OSError as err:
         shutil.rmtree(staged, ignore_errors=True)
         if tools.IS_MAC:
-            raise UpdateError('macOS 不讓 Argus 替換自己。請到「系統設定 → 隱私權與安全性 → App 管理」允許 Argus，'
-                              f'或手動下載新版。（{err}）')
-        raise UpdateError(f'沒辦法替換 Argus 的檔案（可能有檔案正在使用中）。請關掉 Argus 資料夾的視窗後再試，或手動下載新版。（{err}）')
+            raise UpdateError(_('macOS 不讓 Argus 替換自己。請到「系統設定 → 隱私權與安全性 → App 管理」允許 Argus，'
+                                '或手動下載新版。（{err}）', err=err))
+        raise UpdateError(_('沒辦法替換 Argus 的檔案（可能有檔案正在使用中）。請關掉 Argus 資料夾的視窗後再試，或手動下載新版。（{err}）',
+                            err=err))
     try:
         os.rename(staged, app)
     except OSError as err:
         os.rename(old, app)                         # put the old one back: Argus keeps working as before
         shutil.rmtree(staged, ignore_errors=True)
-        raise UpdateError(f'替換失敗，已經還原成原本的版本。（{err}）')
+        raise UpdateError(_('替換失敗，已經還原成原本的版本。（{err}）', err=err))
     shutil.rmtree(backup.parent, ignore_errors=True)
     try:                                            # keep the old version aside; not needed for the update itself
         backup.parent.mkdir(parents=True)
@@ -286,18 +289,18 @@ def apply(job, app=None):
     if reason:
         raise UpdateError(reason)
     if not (info['newer'] and info['asset']):
-        raise UpdateError('目前沒有可以安裝的新版本。')
+        raise UpdateError(_('目前沒有可以安裝的新版本。'))
     job.total = 3
     with tempfile.TemporaryDirectory(prefix='argus-update-') as tmp:
         tmp = Path(tmp)
-        job.say(f'正在下載 Argus {info["latest"]}…')
+        job.say(_('正在下載 Argus {version}…', version=info['latest']))
         download(info['asset'], tmp / 'update.zip')
         job.done = 1
-        job.say('正在確認下載的檔案…')
+        job.say(_('正在確認下載的檔案…'))
         new_app = unpack(tmp / 'update.zip', tmp / 'unpacked')
         verify(new_app, info['latest'])
         job.done = 2
-        job.say('正在換成新版…')
+        job.say(_('正在換成新版…'))
         swap(app, new_app)
     job.done = 3
     job.result = str(app)

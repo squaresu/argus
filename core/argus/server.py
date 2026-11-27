@@ -18,13 +18,22 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 from . import (COPYRIGHT, DISCLAIMER, DISCLAIMER_SHORT, LICENSE, NAME, TAGLINE, VERSION, i18n, integrations, jobs, native,
                reminder, scanners, targets, tools, updates)
+from .i18n import N_, _
+from .i18n import _ as tr          # tr(value): text kept in a constant with N_(…), translated where it's shown
 from .scanners.base import is_newer
 
 UI = Path(__file__).parent / 'ui'
-MOVED_PAGE = ('<!doctype html><meta charset="utf-8"><title>Argus</title>'
+MOVED_PAGE = ('<!doctype html><html lang="{lang}"><meta charset="utf-8"><title>Argus</title>'
               '<body style="font:16px/1.7 -apple-system,\'PingFang TC\',\'Microsoft JhengHei UI\',sans-serif;max-width:560px;margin:18vh auto;padding:0 20px">'
-              '<h2>Argus 需要重新打開</h2><p>Argus 的檔案被搬動或換成新版了，這個還在執行的舊 Argus 已經自動結束。</p>'
-              '<p>請關掉這個分頁，再<b>從「應用程式」資料夾</b>重新打開 Argus（Windows：從開始功能表或桌面的捷徑）。</p></body>')
+              '<h2>{title}</h2><p>{what}</p><p>{how}</p></body>')
+MOVED_TITLE = N_('Argus 需要重新打開')
+MOVED_WHAT = N_('Argus 的檔案被搬動或換成新版了，這個還在執行的舊 Argus 已經自動結束。')
+MOVED_HOW = N_('請關掉這個分頁，再<b>從「應用程式」資料夾</b>重新打開 Argus（Windows：從開始功能表或桌面的捷徑）。')
+
+
+def moved_page():
+    """The page shown when this copy's files are gone, in the language in use."""
+    return MOVED_PAGE.format(lang=i18n.HTML_LANG[i18n.lang()], title=tr(MOVED_TITLE), what=tr(MOVED_WHAT), how=tr(MOVED_HOW))
 TOKEN = secrets.token_urlsafe(24)
 IDLE_SECONDS = 150
 _last_seen = time.time()
@@ -89,8 +98,8 @@ def tool_info(s):
 def state():
     running = [j for j in jobs._jobs.values() if j.status == 'running']
     return {
-        'app': {'name': NAME, 'tagline': TAGLINE, 'version': VERSION, 'copyright': COPYRIGHT, 'license': LICENSE,
-                'disclaimer': DISCLAIMER, 'disclaimer_short': DISCLAIMER_SHORT, 'reports': str(tools.reports_dir()),
+        'app': {'name': NAME, 'tagline': tr(TAGLINE), 'version': VERSION, 'copyright': COPYRIGHT, 'license': LICENSE,
+                'disclaimer': tr(DISCLAIMER), 'disclaimer_short': tr(DISCLAIMER_SHORT), 'reports': str(tools.reports_dir()),
                 'platform': 'mac' if tools.IS_MAC else 'win' if tools.IS_WIN else 'other'},
         'lang': {'now': i18n.lang(), 'chosen': i18n.chosen(), 'system': i18n.system_lang(), 'all': i18n.LANGS},
         'scanners': [tool_info(s) for s in scanners.all_scanners()],
@@ -153,7 +162,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(200, {'app': NAME, 'version': VERSION, 'where': str(Path(__file__).resolve().parent),
                                    'ok': (UI / 'index.html').is_file()})
         if not self.allowed():
-            return self.send(403, {'error': '請從 Argus App 打開這個頁面。'})
+            return self.send(403, {'error': _('請從 Argus App 打開這個頁面。')})
         _last_seen = time.time()
         if path == '/':
             index = UI / 'index.html'
@@ -161,7 +170,7 @@ class Handler(BaseHTTPRequestHandler):
                 # the App was moved or replaced while this copy ran (e.g. a macOS temporary copy that went away):
                 # say so and stop, so the next double-click starts a fresh Argus
                 threading.Timer(1, self.server.shutdown).start()
-                return self.send(503, MOVED_PAGE, 'text/html; charset=utf-8')
+                return self.send(503, moved_page(), 'text/html; charset=utf-8')
             page = i18n.translate_html(index.read_text(encoding='utf-8').replace('__TOKEN__', TOKEN))
             # the page's own scripts look their words up here (ui/app.js: t())
             strings = json.dumps({'lang': i18n.lang(), 'html': i18n.HTML_LANG[i18n.lang()], 'catalog': i18n.catalog()},
@@ -178,12 +187,12 @@ class Handler(BaseHTTPRequestHandler):
             f = tools.report_file(unquote(path[len('/reports/'):]))
             if f:
                 return self.send(200, f.read_bytes(), 'text/html; charset=utf-8')
-            return self.send(404, {'error': '找不到這份報告。'})
+            return self.send(404, {'error': _('找不到這份報告。')})
         if path == '/api/state':
             return self.send(200, state())
         if path.startswith('/api/job/'):
             job = jobs.get(path.rsplit('/', 1)[1])
-            return self.send(200, job.to_dict()) if job else self.send(404, {'error': '找不到這個工作。'})
+            return self.send(200, job.to_dict()) if job else self.send(404, {'error': _('找不到這個工作。')})
         if path == '/api/alive':
             return self.send(200, {'ok': True})
         self.send(404, {'error': 'not found'})
@@ -191,7 +200,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         global _last_seen
         if not self.allowed():
-            return self.send(403, {'error': '請從 Argus App 打開這個頁面。'})
+            return self.send(403, {'error': _('請從 Argus App 打開這個頁面。')})
         _last_seen = time.time()
         path, data = urlparse(self.path).path, self.body()
         try:
@@ -206,7 +215,7 @@ class Handler(BaseHTTPRequestHandler):
             if path == '/api/scan':
                 with START_LOCK:   # the check and the start together, so two clicks can't both start
                     if jobs.busy():
-                        return self.send(409, {'error': '已經有工作在進行，請等它完成。'})
+                        return self.send(409, {'error': _('已經有工作在進行，請等它完成。')})
                     job = jobs.scan(data.get('kind'), data.get('value'), data.get('scanners') or [])
                     return self.send(200, job.to_dict())
             if path == '/api/cancel':   # 停止檢查
@@ -215,7 +224,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(200, jobs.estimate(data.get('kind'), data.get('value'), data.get('scanners') or []))
             if path == '/api/claude-skill':   # put the Argus skill into Claude (or take it out)
                 if data.get('on', True) and not integrations.write_command():
-                    raise targets.TargetError('找不到 uv，請重新打開 Argus 再試一次。')
+                    raise targets.TargetError(_('找不到 uv，請重新打開 Argus 再試一次。'))
                 return self.send(200, {'skill': integrations.install_skill(bool(data.get('on', True)))})
             if path == '/api/autocheck':      # check newly installed Claude skills automatically (Mac)
                 try:
@@ -225,7 +234,7 @@ class Handler(BaseHTTPRequestHandler):
             if path == '/api/install':
                 with START_LOCK:   # the check and the start together, so two clicks can't both start
                     if jobs.busy():
-                        return self.send(409, {'error': '已經有工作在進行，請等它完成。'})
+                        return self.send(409, {'error': _('已經有工作在進行，請等它完成。')})
                     sid = data.get('id')
                     # the install job checks the tool starts; record that before the job reports done
                     job = jobs.install(sid, on_checked=record_check)
@@ -233,7 +242,7 @@ class Handler(BaseHTTPRequestHandler):
             if path == '/api/install-all':   # 全部安裝 / 全部更新
                 with START_LOCK:   # the check and the start together, so two clicks can't both start
                     if jobs.busy():
-                        return self.send(409, {'error': '已經有工作在進行，請等它完成。'})
+                        return self.send(409, {'error': _('已經有工作在進行，請等它完成。')})
                     return self.send(200, jobs.install_all(data.get('ids') or [], on_checked=record_check).to_dict())
             if path == '/api/delete-report':
                 jobs.delete_report(data.get('file') or '')
@@ -246,12 +255,12 @@ class Handler(BaseHTTPRequestHandler):
             if path == '/api/update':
                 with START_LOCK:   # the check and the start together, so two clicks can't both start
                     if jobs.busy():
-                        return self.send(409, {'error': '已經有工作在進行，請等它完成再更新。'})
+                        return self.send(409, {'error': _('已經有工作在進行，請等它完成再更新。')})
                     return self.send(200, jobs.update().to_dict())
             if path == '/api/relaunch':   # after an update: open the new Argus, then this one stops
                 app = updates.app_bundle()
                 if app is None:
-                    return self.send(400, {'error': '找不到 Argus 的位置，請自己重新打開 Argus。'})
+                    return self.send(400, {'error': _('找不到 Argus 的位置，請自己重新打開 Argus。')})
                 native.relaunch(app)
                 threading.Timer(1.5, self.server.shutdown).start()
                 return self.send(200, {'ok': True})
@@ -263,7 +272,7 @@ class Handler(BaseHTTPRequestHandler):
                 if data.get('file'):
                     target = tools.report_file(data['file'])
                     if not target:
-                        return self.send(404, {'error': '找不到這份報告。'})
+                        return self.send(404, {'error': _('找不到這份報告。')})
                 native.open_path(target)
                 return self.send(200, {'ok': True})
         except (targets.TargetError, native.Unsupported) as err:

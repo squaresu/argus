@@ -10,6 +10,7 @@ from datetime import datetime
 from pathlib import Path
 
 from . import capabilities, filecheck, mcp, plugins, reminder, report, reviews, scanners, targets, timing, tools, updates
+from .i18n import _
 from .model import Outcome, SkillResult
 
 PARALLEL = timing.PARALLEL   # scanner runs at a time; each is its own process
@@ -26,7 +27,7 @@ class Job:
         self.status = 'running'      # running → done | error
         self.done = 0
         self.total = 0
-        self.current = '準備中…'
+        self.current = _('準備中…')
         self.log = []
         self.error = ''
         self.result = None           # a scan: the report's file name
@@ -70,8 +71,8 @@ def start(job, work):
         except (targets.TargetError, updates.UpdateError) as err:
             job.status, job.error = 'error', str(err)
         except Exception as err:   # anything unexpected still ends the job with a message
-            job.status, job.error = 'error', f'發生未預期的錯誤：{err}'
-        job.say('完成' if job.status == 'done' else job.error)
+            job.status, job.error = 'error', _('發生未預期的錯誤：{err}', err=err)
+        job.say(_('完成') if job.status == 'done' else job.error)
 
     threading.Thread(target=runner, daemon=True).start()
     return job
@@ -124,13 +125,13 @@ def scan(kind, value, scanner_ids):
         return scan_mcp()
     chosen = [s for s in scanners.all_scanners() if s.id in scanner_ids and s.installed()]
     if not chosen:
-        raise targets.TargetError('請至少勾選一個已安裝的掃描工具。')
+        raise targets.TargetError(_('請至少勾選一個已安裝的掃描工具。'))
 
     def work(job):
         tmp = Path(tempfile.mkdtemp(prefix='argus-'))
         tools.for_job(job)
         try:
-            job.say('正在準備要掃描的內容…')
+            job.say(_('正在準備要掃描的內容…'))
             title, folders = targets.resolve(kind, value, tmp)
             results = [SkillResult(targets.skill_name(f), str(f), key=skill_key(kind, value, f, tmp),
                                    capabilities=capabilities.analyze(f)) for f in folders]
@@ -139,7 +140,7 @@ def scan(kind, value, scanner_ids):
             for r, f in zip(results, folders):   # Argus's own look: unreadable files, unpinned packages
                 r.outcomes.append(filecheck.check(f))
             if kind == 'claude':   # the parts of each plugin that aren't skills: hooks, commands, their scripts
-                job.say('正在檢查外掛的 hooks 和指令…')
+                job.say(_('正在檢查外掛的 hooks 和指令…'))
                 for r, f in plugins.collect(tmp):
                     results.append(r)
                     folders.append(f)
@@ -152,10 +153,14 @@ def scan(kind, value, scanner_ids):
             item_of = {id(r): item for r, item in zip(results, job.items)}
             job.total = len(pairs)
             job.estimate = time.time() - job.started + timing.estimate(
-                [s.id for _, f, s in pairs if s.applies_to(f)])
+                [s.id for _r, f, s in pairs if s.applies_to(f)])
             n_plugins = sum(r.kind == 'plugin' for r in results)
-            found = f'找到 {len(folders) - n_plugins} 個技能' + (f'、{n_plugins} 個外掛的 hooks 和指令' if n_plugins else '')
-            job.say(f'{found}，用 {len(chosen)} 個工具檢查，預估{timing.words(job.estimate)}…')
+            n_skills, n_tools, time_words = len(folders) - n_plugins, len(chosen), timing.words(job.estimate)
+            if n_plugins:
+                job.say(_('找到 {n} 個技能、{plugins} 個外掛的 hooks 和指令，用 {tools} 個工具檢查，預估{time}…',
+                          n=n_skills, plugins=n_plugins, tools=n_tools, time=time_words))
+            else:
+                job.say(_('找到 {n} 個技能，用 {tools} 個工具檢查，預估{time}…', n=n_skills, tools=n_tools, time=time_words))
             versions = {s.id: s.version() or '?' for s in chosen}
 
             def one(pair):
@@ -164,7 +169,7 @@ def scan(kind, value, scanner_ids):
                     return
                 tools.for_job(job)  # so 停止檢查 ends this scan's programs, and only them
                 if not scanner.applies_to(folder):
-                    outcome = Outcome(scanner.id, 'SKIPPED', note=f'{scanner.name}：沒有它要檢查的檔案。')
+                    outcome = Outcome(scanner.id, 'SKIPPED', note=_('{tool}：沒有它要檢查的檔案。', tool=scanner.name))
                 else:
                     with tempfile.TemporaryDirectory(prefix='argus-') as w:
                         began = time.time()
@@ -188,7 +193,8 @@ def scan(kind, value, scanner_ids):
                     if item['done'] == item['total']:   # all tools done: an early conclusion (before 已看過 is applied)
                         item['advice'] = report.advice(result)[0]
                     job.done += 1
-                    job.say(f'{scanner.name} 檢查完「{result.name}」（{job.done} / {job.total}）')
+                    job.say(_('{tool} 檢查完「{name}」（{done} / {total}）', tool=scanner.name, name=result.name,
+                              done=job.done, total=job.total))
 
             with ThreadPoolExecutor(PARALLEL) as pool:
                 list(pool.map(one, pairs))
@@ -196,20 +202,20 @@ def scan(kind, value, scanner_ids):
                 tool_ids = {s.id for s in chosen}
                 kept = [(r, f) for r, f in zip(results, folders) if any(o.scanner in tool_ids for o in r.outcomes)]
                 if not kept:
-                    raise targets.TargetError('已經停止，還沒有任何技能檢查完，所以沒有產生報告。')
-                results, folders = [r for r, _ in kept], [f for _, f in kept]
+                    raise targets.TargetError(_('已經停止，還沒有任何技能檢查完，所以沒有產生報告。'))
+                results, folders = [r for r, _f in kept], [f for _r, f in kept]
                 for r, f in kept:   # say which tools never got to a skill, so its conclusion isn't taken as complete
                     ran = {o.scanner for o in r.outcomes}
-                    r.outcomes += [Outcome(s.id, 'ERROR', error='按了停止檢查，這個工具沒有跑完。')
+                    r.outcomes += [Outcome(s.id, 'ERROR', error=_('按了停止檢查，這個工具沒有跑完。'))
                                    for s in chosen if s.id not in ran and uses(r, f, s)]
-                title += f'（中途停止：只檢查了其中 {len(results)} 個）'
-                job.say('已經停止，正在用檢查完的部分產生報告…')
+                title = _('{title}（中途停止：只檢查了其中 {n} 個）', title=title, n=len(results))
+                job.say(_('已經停止，正在用檢查完的部分產生報告…'))
             order = [s.id for s in chosen]
             for r in results:   # the tools in list order, Argus's own checks after them
                 r.outcomes.sort(key=lambda o: order.index(o.scanner) if o.scanner in order else len(order))
-            job.say('正在跟上次的結果比對…')
+            job.say(_('正在跟上次的結果比對…'))
             snapshots = track(results, folders)
-            job.say('正在產生報告…')
+            job.say(_('正在產生報告…'))
             job.installed = kind in ('claude', 'paths')
             job.results = results
             job.result = report.save(title, results, chosen, versions, snapshots, installed=job.installed)
@@ -218,17 +224,17 @@ def scan(kind, value, scanner_ids):
         finally:
             targets.cleanup(tmp)
 
-    return start(Job('scan', '掃描'), work)
+    return start(Job('scan', _('掃描')), work)
 
 
 def cancel(job_id):
     """停止檢查: no new tool runs start, the ones running are ended, and the report covers what finished."""
     job = _jobs.get(job_id)
     if job is None or job.kind != 'scan' or job.status != 'running':
-        raise targets.TargetError('沒有正在進行的檢查。')
+        raise targets.TargetError(_('沒有正在進行的檢查。'))
     with tools._running_lock:   # no tool run of this scan starts after this
         job.cancelled = True
-    job.say('正在停止…')
+    job.say(_('正在停止…'))
     tools.stop_all(job)
     return job
 
@@ -250,17 +256,18 @@ def estimate(kind, value, scanner_ids):
 def scan_mcp():
     """Argus's own check of the MCP servers set up on this computer: reads settings, starts nothing."""
     def work(job):
-        job.say('正在讀取 MCP 伺服器的設定…')
+        job.say(_('正在讀取 MCP 伺服器的設定…'))
         results = mcp.inspect_all()
         if not results:
-            raise targets.TargetError('在這台電腦上找不到任何 MCP 伺服器的設定（Claude Code、Claude 桌面版、外掛、Cursor）。')
+            raise targets.TargetError(_('在這台電腦上找不到任何 MCP 伺服器的設定（Claude Code、Claude 桌面版、外掛、Cursor）。'))
         job.total = job.done = len(results)
-        job.say(f'找到 {len(results)} 個 MCP 伺服器，正在比對…')
+        job.say(_('找到 {n} 個 MCP 伺服器，正在比對…', n=len(results)))
         snapshots = track(results, [None] * len(results))
         job.installed, job.results = True, results
-        job.result = report.save('我的 MCP 伺服器', results, [mcp.TOOL], {mcp.SCANNER: '內建'}, snapshots, installed=True)
+        job.result = report.save(_('我的 MCP 伺服器'), results, [mcp.TOOL], {mcp.SCANNER: _('內建')}, snapshots,
+                                 installed=True)
 
-    return start(Job('scan', '掃描 MCP 伺服器'), work)
+    return start(Job('scan', _('掃描 MCP 伺服器')), work)
 
 
 def mark_reviewed(report_file, key, reviewed=True):
@@ -269,7 +276,7 @@ def mark_reviewed(report_file, key, reviewed=True):
     try:
         entry = json.loads(report.with_suffix('.json').read_text(encoding='utf-8'))['snapshots'][key]
     except (AttributeError, OSError, ValueError, KeyError, TypeError):
-        raise targets.TargetError('這份報告比較舊，沒有記錄可以比對的資料。請重新掃描一次再標記。')
+        raise targets.TargetError(_('這份報告比較舊，沒有記錄可以比對的資料。請重新掃描一次再標記。'))
     store = reviews.Store()
     store.mark(key, entry['name'], entry['snapshot'], reviewed)
     store.save()
@@ -285,33 +292,34 @@ def _install_one(scanner, job, on_checked=None):
         raise targets.TargetError(reason)
     uv = tools.find_exe('uv')
     if not uv and scanner.needs_uv:
-        raise targets.TargetError('找不到 uv（安裝工具用的程式）。請關掉 Argus 再重新打開，它會自動安裝 uv。')
+        raise targets.TargetError(_('找不到 uv（安裝工具用的程式）。請關掉 Argus 再重新打開，它會自動安裝 uv。'))
     log = tools.state_dir() / 'install.log'
     code, out, err = scanner.install(uv)
     with log.open('a', encoding='utf-8') as fh:
         fh.write(f'\n=== {datetime.now():%Y-%m-%d %H:%M} {scanner.name} (exit {code})\n{out}\n{err}\n')
     if code != 0:
-        raise targets.TargetError(f'安裝 {scanner.name} 失敗：{tools.last_lines(err)}（完整紀錄在 {log}）')
-    job.say(f'{scanner.name} 裝好了，正在確認能不能正常啟動（第一次可能要一分鐘）…')
+        raise targets.TargetError(_('安裝 {tool} 失敗：{err}（完整紀錄在 {file}）', tool=scanner.name, err=tools.last_lines(err),
+                                          file=log))
+    job.say(_('{tool} 裝好了，正在確認能不能正常啟動（第一次可能要一分鐘）…', tool=scanner.name))
     version = scanner.version()
     if on_checked:
         on_checked(scanner.id, version)
     if not version:
-        raise targets.TargetError(f'{scanner.name} 裝好了，但打不開。（紀錄在 {log}）')
+        raise targets.TargetError(_('{tool} 裝好了，但打不開。（紀錄在 {file}）', tool=scanner.name, file=log))
 
 
 def install(scanner_id, on_checked=None):
     """on_checked(scanner id, version or '') is called once the tool has been tried."""
     scanner = scanners.get(scanner_id)
     if scanner is None:
-        raise targets.TargetError('不認得的掃描工具。')
+        raise targets.TargetError(_('不認得的掃描工具。'))
     reason = scanner.preflight()
     if reason:
         raise targets.TargetError(reason)
 
     def work(job):
         job.total = 1
-        job.say(f'正在安裝 {scanner.name}，大約 1–3 分鐘…')
+        job.say(_('正在安裝 {tool}，大約 1–3 分鐘…', tool=scanner.name))
         _install_one(scanner, job, on_checked)
         job.done = 1
 
@@ -325,7 +333,7 @@ def install_all(scanner_ids, on_checked=None):
     ends with the list of those that failed."""
     todo = [s for s in scanners.all_scanners() if s.id in scanner_ids]
     if not todo:
-        raise targets.TargetError('所有工具都已經裝好了。')
+        raise targets.TargetError(_('所有工具都已經裝好了。'))
 
     def work(job):
         job.total = len(todo)
@@ -333,17 +341,17 @@ def install_all(scanner_ids, on_checked=None):
         failed = []
         for n, scanner in enumerate(todo, 1):
             job.target = scanner.id
-            job.say(f'正在安裝 {scanner.name}（{n} / {len(todo)}），每個大約 1–3 分鐘…')
+            job.say(_('正在安裝 {tool}（{done} / {total}），每個大約 1–3 分鐘…', tool=scanner.name, done=n, total=len(todo)))
             try:
                 _install_one(scanner, job, on_checked)
             except targets.TargetError as err:
-                failed.append(f'{scanner.name}（{err}）')
+                failed.append(_('{tool}（{err}）', tool=scanner.name, err=err))
                 job.say(str(err))
             job.done = n
         if failed:
-            raise targets.TargetError('有工具沒裝好：' + '；'.join(failed))
+            raise targets.TargetError(_('有工具沒裝好：{tools}', tools=_('；').join(failed)))
 
-    job = Job('install', '全部安裝')
+    job = Job('install', _('全部安裝'))
     job.target = todo[0].id
     return start(job, work)
 
@@ -352,7 +360,7 @@ def delete_report(file):
     """Delete one report and its record (from 最近的報告)."""
     f = tools.report_file(file)
     if not f:
-        raise targets.TargetError('找不到這份報告。')
+        raise targets.TargetError(_('找不到這份報告。'))
     f.unlink()
     f.with_suffix('.json').unlink(missing_ok=True)
 
@@ -360,7 +368,7 @@ def delete_report(file):
 # --- updating Argus itself ---
 
 def update():
-    return start(Job('update', '更新 Argus'), updates.apply)
+    return start(Job('update', _('更新 Argus')), updates.apply)
 
 
 # --- past reports ---

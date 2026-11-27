@@ -3,6 +3,17 @@
 import subprocess
 
 from . import tools
+from .i18n import _
+
+
+def _applescript_text(text):
+    """text inside an AppleScript "…" string."""
+    return text.replace('\\', '\\\\').replace('"', '\\"')
+
+
+def _powershell_text(text):
+    """text inside a PowerShell "…" string."""
+    return text.replace('`', '``').replace('"', '`"').replace('$', '`$')
 
 
 class Unsupported(Exception):
@@ -30,20 +41,24 @@ def _powershell(script):
 def pick_folder():
     """A folder path, or '' if the person cancelled."""
     if tools.IS_MAC:
-        return _osascript('POSIX path of (choose folder with prompt "選擇技能資料夾")').rstrip('/')
+        prompt = _applescript_text(_('選擇技能資料夾'))
+        return _osascript(f'POSIX path of (choose folder with prompt "{prompt}")').rstrip('/')
     if tools.IS_WIN:
-        return _powershell('$d = New-Object Windows.Forms.FolderBrowserDialog; $d.Description = "選擇技能資料夾"; '
+        prompt = _powershell_text(_('選擇技能資料夾'))
+        return _powershell(f'$d = New-Object Windows.Forms.FolderBrowserDialog; $d.Description = "{prompt}"; '
                            'if ($d.ShowDialog($o) -eq "OK") { $d.SelectedPath }')
-    raise Unsupported('這台電腦不支援選擇資料夾，請直接輸入路徑。')
+    raise Unsupported(_('這台電腦不支援選擇資料夾，請直接輸入路徑。'))
 
 
 def pick_zip():
     if tools.IS_MAC:
-        return _osascript('POSIX path of (choose file with prompt "選擇技能的 zip 檔" of type {"zip", "public.zip-archive"})')
+        prompt = _applescript_text(_('選擇技能的 zip 檔'))
+        return _osascript(f'POSIX path of (choose file with prompt "{prompt}" of type {{"zip", "public.zip-archive"}})')
     if tools.IS_WIN:
-        return _powershell('$d = New-Object Windows.Forms.OpenFileDialog; $d.Title = "選擇技能的 zip 檔"; '
+        title = _powershell_text(_('選擇技能的 zip 檔'))
+        return _powershell(f'$d = New-Object Windows.Forms.OpenFileDialog; $d.Title = "{title}"; '
                            '$d.Filter = "zip (*.zip)|*.zip"; if ($d.ShowDialog($o) -eq "OK") { $d.FileName }')
-    raise Unsupported('這台電腦不支援選擇檔案，請直接輸入路徑。')
+    raise Unsupported(_('這台電腦不支援選擇檔案，請直接輸入路徑。'))
 
 
 def relaunch(app):
