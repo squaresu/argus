@@ -9,8 +9,8 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 
-from . import capabilities, filecheck, mcp, plugins, reminder, report, reviews, scanners, targets, timing, tools, updates
-from .i18n import _
+from . import capabilities, filecheck, i18n, mcp, plugins, reminder, report, reviews, scanners, targets, timing, tools, updates
+from .i18n import N_, _
 from .model import Outcome, SkillResult
 
 PARALLEL = timing.PARALLEL   # scanner runs at a time; each is its own process
@@ -381,5 +381,20 @@ def history(limit=30):
         except (OSError, ValueError):
             continue
         if (tools.reports_dir() / d.get('file', '')).is_file():
+            d['title'] = shown_title(d.get('title', ''))
             items.append(d)
     return items
+
+
+# the report titles Argus makes itself (not a folder, zip or link): shown in the language in use now, whichever
+# language the report was saved in
+OWN_TITLES = [N_('我所有的 Claude 技能'), N_('新裝或更新的 Claude 技能'), N_('我的 MCP 伺服器')]
+
+
+def shown_title(title):
+    for source in OWN_TITLES:
+        names = {source} | {i18n.catalog(code).get(source) for code in i18n.LANGS}
+        for name in filter(None, names):
+            if isinstance(name, str) and title.startswith(name):
+                return _(source) + title[len(name):]
+    return title

@@ -1451,3 +1451,17 @@ class Translations(unittest.TestCase):
         self.assertEqual(i18n.match('zh-Hans-CN'), 'zh-TW')
         self.assertEqual(i18n.match('ja_JP.UTF-8'), 'ja')
         self.assertIsNone(i18n.match('fr-FR'))
+
+
+class HistoryTitles(unittest.TestCase):
+    def test_own_titles_follow_the_language(self):
+        from argus import i18n
+        i18n._lang = 'ja'
+        try:
+            ja = i18n.catalog('ja')['我所有的 Claude 技能']
+            self.assertEqual(jobs.shown_title('我所有的 Claude 技能'), ja)                  # saved in Chinese
+            self.assertEqual(jobs.shown_title(i18n.catalog('en')['我的 MCP 伺服器']), i18n.catalog('ja')['我的 MCP 伺服器'])
+            self.assertEqual(jobs.shown_title('owner/repo'), 'owner/repo')                 # a source stays as it is
+        finally:
+            i18n._lang = None
+        self.assertEqual(jobs.shown_title(ja), '我所有的 Claude 技能')                     # back in Chinese
