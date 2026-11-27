@@ -610,6 +610,10 @@ button.review{margin-top:10px;border:1px dashed var(--line);background:none;colo
 button.review:hover{color:var(--ink);border-style:solid} button.review.on{color:var(--safe);border-style:solid;border-color:var(--safe)}
 footer{color:var(--muted);font-size:13px;margin-top:28px;border-top:1px solid var(--line);padding-top:12px} footer p{margin:4px 0}
 .disclaimer{margin-top:10px!important;line-height:1.6}
+:lang(ja){line-break:strict}:lang(ko){word-break:keep-all;overflow-wrap:anywhere}
+:lang(ja) body{font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Hiragino Kaku Gothic ProN","Yu Gothic UI","Meiryo UI","Noto Sans JP",sans-serif}
+:lang(ko) body{font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",sans-serif}
+:lang(en) body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
 @page{size:A4;margin:14mm}
 @media print{*{-webkit-print-color-adjust:exact;print-color-adjust:exact}body{background:#fff}main{max-width:none;padding:0}.rbar,button,.how,.no-match{display:none!important}
 .skill,.verdict-box,.finding,.ok-list,.dup-note{box-shadow:none;break-inside:avoid}.finding pre{max-height:none;overflow:visible}
