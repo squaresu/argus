@@ -378,7 +378,7 @@ async function loadState() {
   $('#copyright').textContent = state.app.copyright;
   // wording for this system: Finder or 檔案總管, and which manual-update steps to show
   const win = state.app.platform === 'win';
-  document.querySelectorAll('.file-manager').forEach((el) => { el.textContent = win ? t('檔案總管') : ' Finder '; });
+  document.querySelectorAll('.file-manager').forEach((el) => { el.textContent = win ? t('檔案總管') : t(' Finder '); });
   document.querySelectorAll('[data-os]').forEach((el) => { el.hidden = el.dataset.os !== (win ? 'win' : 'mac'); });
   $('#disclaimer-short').textContent = `⚠︎ ${state.app.disclaimer_short}`;
   $('#about-disclaimer').textContent = state.app.disclaimer;

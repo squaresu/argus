@@ -84,7 +84,7 @@ def js_sources():
             scripts.append((CORE / 'report.py', node.value))
     for path, text in scripts:
         spans = []
-        for m in JS_CALL.finditer(text):
+        for m in JS_CALL.finditer(_strip_js_comments(text)):   # not the examples in comments
             s = _js_unescape(m.group(2))
             if m.group(1) == '`' and '${' in s:
                 unmarked.append(f'{path.relative_to(ROOT)}  t(`…${{}}…`) needs plain text: {s[:50]!r}')
