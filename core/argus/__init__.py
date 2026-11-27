@@ -8,7 +8,7 @@ from .i18n import N_
 
 NAME = 'Argus'
 TAGLINE = N_('AI 技能安全掃描')
-VERSION = '2.3.2'
+VERSION = '2.4.0'
 COPYRIGHT = '© 2026 Square Su'
 LICENSE = 'MIT'
 
