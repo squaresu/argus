@@ -1041,3 +1041,10 @@ class InstallAllAndHistory(unittest.TestCase):
                 jobs.delete_report('../etc/passwd.html')
         finally:
             tools.reports_dir = saved
+
+
+class GithubTitles(unittest.TestCase):
+    def test_short_title_without_tracking(self):
+        self.assertEqual(targets.github_title('https://github.com/Leonxlnx/room-at-dawn?fbclid=IwdGRjcAVjpCFl'), 'Leonxlnx/room-at-dawn')
+        self.assertEqual(targets.github_title('https://github.com/o/r/tree/main/skills/a/'), 'o/r/skills/a')
+        self.assertEqual(targets.github_title('https://github.com/o/r.git'), 'o/r')

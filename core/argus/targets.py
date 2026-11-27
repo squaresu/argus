@@ -146,6 +146,15 @@ def download(url, dest: Path):
         raise TargetError(f'下載失敗，請確認網址正確、而且是公開的 repo。（{err}）')
 
 
+def github_title(url):
+    """A GitHub link as owner/repo, plus the folder inside it: the report's title, without ?fbclid=… and the like."""
+    m = GITHUB.match(url.strip())
+    if not m:
+        return url.strip()
+    owner, repo, _, _, sub = m.groups()
+    return '/'.join(x for x in (owner, repo.removesuffix('.git'), (sub or '').strip('/')) if x)
+
+
 def github(url, work: Path):
     """Fetch a GitHub link as a zip (so Git isn't needed) and return the folder it points at."""
     m = GITHUB.match(url.strip())
@@ -182,7 +191,7 @@ def resolve(kind, value, work: Path):
             raise TargetError('找不到這個 zip 檔。')
         return p.name, expand(single_folder(safe_extract(p, work / 'zip')))
     if kind == 'github':
-        return value.strip(), expand(github(value, work))
+        return github_title(value), expand(github(value, work))
     if kind == 'paths':   # given skill folders, already on this computer (the automatic check of new skills)
         folders = [Path(v) for v in (value or []) if Path(v).is_dir()]
         if not folders:

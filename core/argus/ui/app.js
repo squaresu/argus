@@ -213,9 +213,14 @@ async function watchUpdate(jobId) {
 
 const TRASH = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></svg>';
 // the report's conclusion in a few words, like the line at the top of the report
+// a GitHub link as owner/repo (plus the folder inside), without tracking strings like ?fbclid=…
+function sourceName(title) {
+  const m = /^https?:\/\/(?:www\.)?github\.com\/([^?#]+)/.exec(title || '');
+  return m ? m[1].replace(/\/(?:tree|blob)\/[^/]+/, '').replace(/\.git$|\/+$/g, '') : title;
+}
 function historyLine(r) {
   const a = r.advice;
-  if (!a) return r.title;
+  if (!a) return sourceName(r.title);
   if (r.skills === 1) return adviceWord(a.no ? 'no' : a.ask ? 'ask' : 'ok', r.installed);
   if (a.no) return `${a.no} 個${adviceWord('no', r.installed)}` + (a.ask ? `、${a.ask} 個先問人` : '');
   if (a.ask) return `${a.ask} 個先問人，其他${adviceWord('ok', r.installed)}`;
@@ -231,9 +236,13 @@ function renderHistory() {
       : ['DO_NOT_INSTALL', 'CAUTION', 'SAFE', 'ERROR']
         .filter((v) => r.counts?.[v]).map((v) => `<span class="dot ${VERDICT_CLASS[v]}" title="${VERDICT_ZH[v]}">${r.counts[v]}</span>`).join('');
     const unit = r.title === '我的 MCP 伺服器' ? '個 MCP 伺服器' : '個技能';
-    return `<li data-file="${esc(r.file)}" tabindex="0">
-      <div class="h-main"><span class="h-title">${esc(historyLine(r))}</span>
-        <span class="h-when">${esc(r.title)} · ${esc(r.when)} · ${r.skills} ${unit}</span></div>
+    const line = historyLine(r);
+    const source = sourceName(r.title);
+    // an older report has no conclusion line: its source is the title, so don't say it twice
+    const sub = [line === source ? '' : source, r.when, `${r.skills} ${unit}`].filter(Boolean).join(' · ');
+    return `<li data-file="${esc(r.file)}" tabindex="0" title="${esc(r.title)}">
+      <div class="h-main"><span class="h-title">${esc(line)}</span>
+        <span class="h-when">${esc(sub)}</span></div>
       <span class="dots">${dots}</span>
       <button class="h-del" type="button" data-del="${esc(r.file)}" aria-label="刪除這份報告" title="刪除這份報告">${TRASH}</button></li>`;
   }).join('');
