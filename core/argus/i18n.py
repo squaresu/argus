@@ -23,7 +23,7 @@ from pathlib import Path
 from . import tools
 
 SOURCE = 'zh-TW'
-LANGS = {'zh-TW': '繁體中文', 'en': 'English', 'ja': '日本語', 'ko': '한국어'}
+LANGS = {'zh-TW': '繁體中文', 'en': 'English', 'ja': '日本語', 'ko': '한국어'}   # i18n: keep (each language in its own script)
 HTML_LANG = {'zh-TW': 'zh-Hant', 'en': 'en', 'ja': 'ja', 'ko': 'ko'}
 FOLDER = Path(__file__).resolve().parent / 'i18n'
 
