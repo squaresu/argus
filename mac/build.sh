@@ -14,7 +14,12 @@ cp "$ROOT/mac/AppIcon.icns" "$APP/Resources/"
 # the core, without caches
 (cd "$ROOT/core" && find argus -type f ! -path '*/__pycache__/*' ! -name '*.pyc' -print0 |
   xargs -0 -I{} sh -c 'mkdir -p "$1/$(dirname "{}")" && cp "{}" "$1/{}"' _ "$APP/Resources/core")
+# the user guide in each language
+rm -f "$DIST"/Argus-*.md
 cp "$ROOT/docs/使用說明.md" "$DIST/Argus-使用說明.md"
+cp "$ROOT/docs/en/guide-mac.md" "$DIST/Argus-Guide.md"
+cp "$ROOT/docs/ja/guide-mac.md" "$DIST/Argus-ガイド.md"
+cp "$ROOT/docs/ko/guide-mac.md" "$DIST/Argus-사용설명서.md"
 cp "$ROOT/LICENSE" "$ROOT/THIRD_PARTY_NOTICES.md" "$DIST/"
-(cd "$DIST" && zip -qry "Argus-mac-$VERSION.zip" Argus.app Argus-使用說明.md LICENSE THIRD_PARTY_NOTICES.md)
+(cd "$DIST" && zip -qry "Argus-mac-$VERSION.zip" Argus.app Argus-使用說明.md Argus-Guide.md Argus-ガイド.md Argus-사용설명서.md LICENSE THIRD_PARTY_NOTICES.md)
 echo "built $DIST/Argus-mac-$VERSION.zip"

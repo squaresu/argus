@@ -2,6 +2,8 @@
 
 # Argus · AI 技能安全掃描
 
+**繁體中文** · [English](README.en.md) · [日本語](README.ja.md) · [한국어](README.ko.md)
+
 在安裝 Claude 等 AI 工具的「技能」（Skill）之前，請好幾個開源安全掃描工具一起檢查，再把結果整理成一份白話中文報告。全部在自己的電腦上執行，不上傳技能內容，也不需要 AI 金鑰。
 
 名字來自希臘神話裡的百眼巨人 Argus Panoptes：身上的眼睛輪流守望，從不全部閉上。

@@ -2,6 +2,8 @@
 
 # Argus · Security checks for AI skills
 
+[繁體中文](README.md) · **English** · [日本語](README.ja.md) · [한국어](README.ko.md)
+
 Before you install a "skill" for Claude or another AI tool, Argus asks several open-source security scanners to check it, then turns what they find into one plain-language report. Everything runs on your own computer: the skill is never uploaded, and no AI key is needed.
 
 The name comes from Argus Panoptes, the hundred-eyed giant of Greek myth: his eyes took turns keeping watch, and never all closed at once.

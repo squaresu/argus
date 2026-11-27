@@ -24,7 +24,10 @@ with zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED) as z:   # zipfile marks the
     for f in sorted((root / 'core/argus').rglob('*')):
         if f.is_file() and '__pycache__' not in f.parts and f.suffix != '.pyc':
             z.write(f, 'Argus/app/core/' + f.relative_to(root / 'core').as_posix())
-    z.write(root / 'docs/使用說明-Windows.md', 'Argus/使用說明.md')
+    z.write(root / 'docs/使用說明-Windows.md', 'Argus/使用說明.md')     # the user guide in each language
+    z.write(root / 'docs/en/guide-windows.md', 'Argus/Guide.md')
+    z.write(root / 'docs/ja/guide-windows.md', 'Argus/ガイド.md')
+    z.write(root / 'docs/ko/guide-windows.md', 'Argus/사용설명서.md')
     z.write(root / 'LICENSE', 'Argus/LICENSE')
     z.write(root / 'THIRD_PARTY_NOTICES.md', 'Argus/THIRD_PARTY_NOTICES.md')
 EOF

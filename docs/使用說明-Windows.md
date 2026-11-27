@@ -97,7 +97,7 @@
 Claude 會自己用 Argus 掃描，再用白話告訴你結果，不用打開 Argus、也不用複製貼上。你請 Claude 裝技能時，它也會先檢查、告訴你結論再裝。
 
 > 一般的 Claude 對話（網頁版、手機 App）不能執行你電腦上的程式，所以只有 Claude Code 能用這個技能。
-> 背後用的是 Argus 建立的 `argus` 指令（在 `%USERPROFILE%\\.local\\bin\\argus.cmd`）。Argus 每次打開都會更新它，所以搬動或更新 Argus 之後，打開一次就好。
+> 背後用的是 Argus 建立的 `argus` 指令（在 `%USERPROFILE%\.local\bin\argus.cmd`）。Argus 每次打開都會更新它，所以搬動或更新 Argus 之後，打開一次就好。
 
 **新裝的技能自動檢查**：目前只有 Mac 版，Windows 版之後會加上。打開 Argus 時的「提醒你重新檢查」一樣會告訴你哪些技能有更新。
 

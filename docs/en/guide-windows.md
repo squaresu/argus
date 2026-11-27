@@ -98,7 +98,7 @@ When this is on, Argus adds a skill called "argus" to Claude. Then, in **Claude 
 Claude runs Argus on its own and tells you the result in plain words. No need to open Argus or copy and paste anything. When you ask Claude to install a skill, it checks it first and tells you what it found before installing.
 
 > Regular Claude chats (on the web or the mobile app) can't run programs on your computer, so only Claude Code can use this skill.
-> Behind the scenes it uses the `argus` command that Argus creates (at `%USERPROFILE%\\.local\\bin\\argus.cmd`). Argus updates it every time it opens, so after you move or update Argus, just open it once.
+> Behind the scenes it uses the `argus` command that Argus creates (at `%USERPROFILE%\.local\bin\argus.cmd`). Argus updates it every time it opens, so after you move or update Argus, just open it once.
 
 **Automatic check for new skills**: only on Mac for now. It's coming to Windows later. Meanwhile, the "Reminders to check again" you see when opening Argus still tell you which skills have changed.
 
