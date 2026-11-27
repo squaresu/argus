@@ -125,6 +125,7 @@ def label_duplicates(results, folders, home: Path | None = None):
     for r, folder in zip(results, folders):
         if names.count(r.name) > 1:
             r.duplicate = True
+            r.base_name = r.name
             r.name = _('{name}（{source}）', name=r.name, source=skill_source(folder, home))
 
 

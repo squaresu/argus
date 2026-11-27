@@ -7,6 +7,7 @@ import json
 import threading
 
 from . import tools
+from .i18n import _
 
 # seconds per skill, before this computer has measured anything (SkillSpector and Cisco start a large program)
 GUESS = {'skillspector': 45, 'cisco': 30, 'bandit': 5, 'semgrep': 20, 'secrets': 5, 'osv': 8}
@@ -55,6 +56,6 @@ def estimate(runs):
 def words(seconds):
     """Seconds as a rough, friendly length of time."""
     if seconds < 60:
-        return '不到 1 分鐘'
+        return _('不到 1 分鐘')
     minutes = round(seconds / 60)
-    return f'大約 {minutes} 分鐘' if minutes < 60 else f'大約 {minutes / 60:.1f} 小時'
+    return _('大約 {n} 分鐘', n=minutes) if minutes < 60 else _('大約 {hours} 小時', hours=f'{minutes / 60:.1f}')

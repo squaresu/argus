@@ -16,6 +16,7 @@ import subprocess
 from pathlib import Path
 
 from . import tools
+from .i18n import _
 
 CORE = Path(__file__).resolve().parent.parent          # the folder that holds argus/
 SKILL_DIR_NAME = 'argus'
@@ -68,12 +69,8 @@ def skill_dir(home=None):
 def skill_text():
     mac = '~/.local/bin/argus'
     win = r'& "$env:USERPROFILE\.local\bin\argus.cmd"'
-    return f'''---
-name: argus
-description: 用 Argus 檢查 AI 技能（Skill）、Claude 外掛或 MCP 伺服器安不安全。使用者想安裝、試用或更新某個技能、外掛或 MCP 伺服器，問它安不安全，或想檢查電腦上已經裝好的技能時使用。Use when the user wants to install, try or update a skill, plugin or MCP server, asks whether one is safe, or wants their installed skills checked.
----
-
-# 用 Argus 做安全檢查
+    description = _('用 Argus 檢查 AI 技能（Skill）、Claude 外掛或 MCP 伺服器安不安全。使用者想安裝、試用或更新某個技能、外掛或 MCP 伺服器，問它安不安全，或想檢查電腦上已經裝好的技能時使用。Use when the user wants to install, try or update a skill, plugin or MCP server, asks whether one is safe, or wants their installed skills checked.')
+    body = _('''# 用 Argus 做安全檢查
 
 Argus 是這台電腦上的安全檢查工具：請好幾個開源掃描工具一起看，再依規則整理出結論。這個技能教你怎麼呼叫它、怎麼解讀結果。
 
@@ -95,7 +92,7 @@ Argus 是這台電腦上的安全檢查工具：請好幾個開源掃描工具�
 
 掃描可能要好幾分鐘（每個技能大約 1 分鐘），請給足夠的等待時間（至少 10 分鐘），或在背景執行後再讀結果。也可以加 `--tools skillspector,cisco` 只用部分工具，比較快。
 
-找不到這個指令時：請使用者打開 Argus App 一次（Argus 每次打開都會建立這個指令）。還沒裝 Argus 的話，下載網址是 {DOWNLOAD}
+找不到這個指令時：請使用者打開 Argus App 一次（Argus 每次打開都會建立這個指令）。還沒裝 Argus 的話，下載網址是 {download}
 
 ## 3. 讀結果
 
@@ -111,7 +108,8 @@ Argus 是這台電腦上的安全檢查工具：請好幾個開源掃描工具�
 - 最後用一兩句話說：能不能裝（或繼續用）、裝之前要注意什麼。
 - 附上完整報告的位置，方便使用者自己點開看。
 - 掃描工具只看寫法，可能誤判也可能漏掉；不要說成「保證安全」。
-'''
+''', mac=mac, win=win, download=DOWNLOAD)
+    return f'---\nname: argus\ndescription: {description}\n---\n\n{body}'
 
 
 def skill_installed(home=None):
@@ -174,12 +172,12 @@ def set_autocheck(on):
     """Turn the automatic check on or off. Turning it on takes a baseline of what's installed now, so only
     skills installed or changed from now on are checked (a full check is the 我的 Claude 技能 scan)."""
     if not autocheck_supported():
-        raise OSError('自動檢查目前只支援 Mac。')
+        raise OSError(_('自動檢查目前只支援 Mac。'))
     path = agent_path()
     uid = str(os.getuid())
     if on:
         if not write_command():
-            raise OSError('找不到 uv，請重新打開 Argus 再試一次。')
+            raise OSError(_('找不到 uv，請重新打開 Argus 再試一次。'))
         from . import reminder
         reminder.take_baseline()
         (tools.HOME / 'Library' / 'Logs' / 'Argus').mkdir(parents=True, exist_ok=True)
@@ -204,10 +202,11 @@ def notify(title, message, report=None, urgent=False):
         return
     q = lambda text: json.dumps(str(text), ensure_ascii=False)   # an AppleScript string literal
     if urgent and report:
-        script = (f'display dialog {q(message)} with title {q(title)} buttons {{"稍後再看", "打開報告"}} '
-                  f'default button "打開報告" with icon caution giving up after 3600')
+        later, open_it = _('稍後再看'), _('打開報告')
+        script = (f'display dialog {q(message)} with title {q(title)} buttons {{{q(later)}, {q(open_it)}}} '
+                  f'default button {q(open_it)} with icon caution giving up after 3600')
         p = subprocess.run(['osascript', '-e', script], capture_output=True, text=True)
-        if '打開報告' in p.stdout:
+        if open_it in p.stdout:
             subprocess.run(['open', str(report)])
     else:
         subprocess.run(['osascript', '-e', f'display notification {q(message)} with title {q(title)}'],

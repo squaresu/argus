@@ -5,18 +5,20 @@ import os
 import re
 from dataclasses import asdict, dataclass, field
 
+from .i18n import N_
+
 # verdicts, worst first; SKIPPED (nothing for this scanner to check) and ERROR don't decide a skill's verdict
 VERDICTS = ['DO_NOT_INSTALL', 'CAUTION', 'SAFE']
 VERDICT_ZH = {
-    'DO_NOT_INSTALL': ('不建議安裝', 'danger'),
-    'CAUTION': ('注意', 'caution'),
-    'SAFE': ('安全', 'safe'),
-    'ERROR': ('沒掃完', 'error'),
-    'SKIPPED': ('不適用', 'muted'),
+    'DO_NOT_INSTALL': (N_('不建議安裝'), 'danger'),
+    'CAUTION': (N_('注意'), 'caution'),
+    'SAFE': (N_('安全'), 'safe'),
+    'ERROR': (N_('沒掃完'), 'error'),
+    'SKIPPED': (N_('不適用'), 'muted'),
 }
 SEVERITIES = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'INFO']
-SEVERITY_ZH = {'CRITICAL': ('嚴重', 'danger'), 'HIGH': ('高', 'danger'), 'MEDIUM': ('中', 'caution'),
-               'LOW': ('低', 'safe'), 'INFO': ('資訊', 'safe')}
+SEVERITY_ZH = {'CRITICAL': (N_('嚴重'), 'danger'), 'HIGH': (N_('高'), 'danger'), 'MEDIUM': (N_('中'), 'caution'),
+               'LOW': (N_('低'), 'safe'), 'INFO': (N_('資訊'), 'safe')}
 
 STYLE_EXT = {'.css', '.scss', '.sass', '.less'}
 CODE_EXT = {'.py', '.js', '.mjs', '.cjs', '.ts', '.tsx', '.jsx', '.sh', '.rb', '.go', '.rs', '.java', '.swift', '.php'}
@@ -71,6 +73,7 @@ class SkillResult:
     kind: str = 'skill'                                       # 'skill', or 'mcp' for an MCP server entry
     tracked: dict = field(default_factory=dict)               # MCP entries: a hash of the settings, in place of files
     duplicate: bool = False                                   # another installed skill has the same name
+    base_name: str = ''                                       # a duplicate's name before its 'from where' label
 
     @property
     def verdict(self):

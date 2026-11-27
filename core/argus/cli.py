@@ -12,7 +12,8 @@ import sys
 import time
 from pathlib import Path
 
-from . import NAME, VERSION, integrations, jobs, reminder, report, scanners, tools
+from . import NAME, VERSION, i18n, integrations, jobs, reminder, report, scanners, tools
+from .i18n import _
 
 USAGE = __doc__.split('\n\n')[1]
 SETTLE = 45   # seconds to wait after a change before checking, so an install in progress can finish
@@ -60,20 +61,20 @@ def scan_command(args):
     kind, value = target_of(' '.join(args))
     ids = installed_scanner_ids(wanted)
     if kind != 'mcp' and not ids:
-        print('還沒有安裝任何掃描工具。請打開 Argus App，在「用哪些工具？」按「安裝」。', file=sys.stderr)
+        print(_('還沒有安裝任何掃描工具。請打開 Argus App，在「用哪些工具？」按「安裝」。'), file=sys.stderr)
         return 1
     job = run(kind, value, ids, say=lambda text: print(f'… {text}', file=sys.stderr, flush=True))
     if job.status != 'done':
-        print(f'沒有完成：{job.error}', file=sys.stderr)
+        print(_('沒有完成：{err}', err=job.error), file=sys.stderr)
         return 1
     results = job.results
     is_mcp = kind == 'mcp'
     unit = report.unit_for(results, is_mcp)
-    _, line = report.summary_line(results, job.installed, unit)
-    out = [f'{NAME} {VERSION} 檢查完成：共 {report.count_words(results, unit)}',
-           f'Argus 依規則的初步結論：{line}', '',
+    _worst, line = report.summary_line(results, job.installed, unit)
+    out = [_('{name} {version} 檢查完成：共 {count}', name=NAME, version=VERSION, count=report.count_words(results, unit)),
+           _('Argus 依規則的初步結論：{line}', line=line), '',
            report.claude_all(results, job.installed, unit),
-           f'完整報告：{tools.reports_dir() / job.result}']
+           _('完整報告：{file}', file=tools.reports_dir() / job.result)]
     print('\n'.join(out))
     return 0
 
@@ -97,12 +98,13 @@ def watch_command(args):
             return 0
         job = run('paths', [str(f) for f in todo], ids)
         if job.status != 'done':
-            integrations.notify('Argus', f'自動檢查新技能時出了問題：{job.error}')
+            integrations.notify('Argus', _('自動檢查新技能時出了問題：{err}', err=job.error))
             return 1
-        worst, line = report.summary_line(job.results, True, '個技能')
-        names = '、'.join(r.name for r in job.results[:4]) + (' 等' if len(job.results) > 4 else '')
-        message = f'檢查了新裝或更新的技能（{names}）。\n結論：{line}'
-        integrations.notify('Argus 自動檢查', message, report=tools.reports_dir() / job.result, urgent=worst != 'ok')
+        worst, line = report.summary_line(job.results, True, report.UNIT_SKILLS)
+        names = i18n.join(r.name for r in job.results[:4])
+        message = (_('檢查了新裝或更新的技能（{names} 等）。\n結論：{line}', names=names, line=line) if len(job.results) > 4 else
+                   _('檢查了新裝或更新的技能（{names}）。\n結論：{line}', names=names, line=line))
+        integrations.notify(_('Argus 自動檢查'), message, report=tools.reports_dir() / job.result, urgent=worst != 'ok')
         return 0
     finally:
         lock.unlink(missing_ok=True)
