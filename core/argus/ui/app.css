@@ -63,6 +63,11 @@ body {
 .theme-btn .sun, [data-theme="light"] .theme-btn .moon { display: none; }
 [data-theme="light"] .theme-btn .sun { display: block; }
 .theme-btn:focus-visible { border-radius: 50%; }
+/* 語言: looks like the theme button; the real <select> lies invisibly on top, so the menu is the system's own */
+.lang-btn { position: relative; }
+.lang-btn select { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; font: inherit; font-size: 14px; color: var(--ink); background: var(--card); border: 0; border-radius: 50%; }
+.lang-btn:has(select:focus-visible) { outline: 2px solid var(--focus); outline-offset: 2px; }
+.lang-btn:has(select:disabled) { opacity: .6; }
 .about-btn.has-update::after { top: 2px; right: 2px; }
 .hero { max-width: 980px; margin: 0 auto; padding: 18px 24px 34px; position: relative; }
 .hero h1 { font-size: 30px; line-height: 1.3; margin: 0 0 6px; letter-spacing: .01em; }

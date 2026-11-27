@@ -9,6 +9,16 @@ STATE="$HOME/Library/Application Support/Argus"
 LOGS="$HOME/Library/Logs/Argus"
 mkdir -p "$STATE" "$LOGS"
 
+# the language of these messages: the one picked in Argus (its settings.json), else the first of the Mac's
+# languages that Argus has, else English; the same order as core/argus/i18n.py
+L="${ARGUS_LANG:-}"
+[ -n "$L" ] || L="$(sed -n 's/.*"lang": *"\([^"]*\)".*/\1/p' "$STATE/settings.json" 2>/dev/null | head -n 1)"
+[ -n "$L" ] || L="$(defaults read -g AppleLanguages 2>/dev/null | tr -d ' \t",()' | grep -E -m 1 '^(zh|ja|ko|en)')"
+case "$L" in zh*) L=zh-TW ;; ja*) L=ja ;; ko*) L=ko ;; *) L=en ;; esac
+msg() {   # msg 中文 English 日本語 한국어: the one in the language in use
+  case "$L" in en) printf '%s' "$2" ;; ja) printf '%s' "$3" ;; ko) printf '%s' "$4" ;; *) printf '%s' "$1" ;; esac
+}
+
 say_dialog() {   # message [buttons...]: show a dialog, print the button pressed
   local msg="$1"; shift
   local btns="" b
@@ -23,8 +33,13 @@ fail() { osascript -e "display alert \"$APP\" message \"$1\" as critical" >/dev/
 #    Translocation). That copy vanishes once the App is moved or updated, leaving a running Argus without its files.
 case "$HERE" in
   */AppTranslocation/*)
-    ans=$(say_dialog "請先把 Argus 拖到「應用程式」資料夾，再從那裡打開。\n\n直接從「下載項目」打開時，macOS 會用一份暫時的副本執行，之後搬動或更新 Argus 就會出問題。" "打開「應用程式」資料夾" "取消")
-    [ "$ans" = "打開「應用程式」資料夾" ] && open /Applications
+    open_apps="$(msg "打開「應用程式」資料夾" "Open Applications Folder" "「アプリケーション」フォルダを開く" "응용 프로그램 폴더 열기")"
+    ans=$(say_dialog "$(msg "請先把 Argus 拖到「應用程式」資料夾，再從那裡打開。\n\n直接從「下載項目」打開時，macOS 會用一份暫時的副本執行，之後搬動或更新 Argus 就會出問題。" \
+      "Please drag Argus into the Applications folder first, then open it from there.\n\nWhen Argus is opened straight from Downloads, macOS runs a temporary copy of it, and moving or updating Argus later causes problems." \
+      "先に Argus を「アプリケーション」フォルダにドラッグしてから、そこから開いてください。\n\n「ダウンロード」から直接開くと macOS は一時的なコピーで実行するため、あとで Argus を移動したりアップデートしたりすると問題が起きます。" \
+      "먼저 Argus를 '응용 프로그램' 폴더로 드래그한 다음 거기서 여세요.\n\n'다운로드'에서 바로 열면 macOS가 임시 사본으로 실행하기 때문에, 나중에 Argus를 옮기거나 업데이트하면 문제가 생깁니다.")" \
+      "$open_apps" "$(msg "取消" "Cancel" "キャンセル" "취소")")
+    [ "$ans" = "$open_apps" ] && open /Applications
     exit 0 ;;
 esac
 
@@ -45,11 +60,19 @@ fi
 
 # 2. uv runs Argus and installs the scanners
 if ! command -v uv >/dev/null 2>&1; then
-  ans=$(say_dialog "第一次使用 Argus，要先安裝 uv（用來安裝掃描工具的免費開源小程式）。要現在安裝嗎？（需要網路，大約 1 分鐘）" "安裝" "取消")
-  [ "$ans" = "安裝" ] || exit 0
-  note "正在安裝 uv…"
+  install="$(msg "安裝" "Install" "インストール" "설치")"
+  ans=$(say_dialog "$(msg "第一次使用 Argus，要先安裝 uv（用來安裝掃描工具的免費開源小程式）。要現在安裝嗎？（需要網路，大約 1 分鐘）" \
+    "The first time you use Argus, it needs to install uv (a small free, open-source program that installs the scanning tools). Install it now? (Needs the internet, about 1 minute)" \
+    "Argus を初めて使うときは、先に uv（スキャンツールのインストールに使う、無料のオープンソースの小さなプログラム）をインストールします。今すぐインストールしますか？（インターネット接続が必要、約 1 分）" \
+    "Argus를 처음 사용할 때는 먼저 uv(검사 도구를 설치하는 무료 오픈 소스 소형 프로그램)를 설치해야 합니다. 지금 설치할까요? (인터넷 연결 필요, 약 1분)")" \
+    "$install" "$(msg "取消" "Cancel" "キャンセル" "취소")")
+  [ "$ans" = "$install" ] || exit 0
+  note "$(msg "正在安裝 uv…" "Installing uv…" "uv をインストールしています…" "uv 설치 중…")"
   curl -LsSf https://astral.sh/uv/install.sh | sh >"$LOGS/uv-install.log" 2>&1 \
-    || fail "安裝 uv 失敗，請檢查網路後再試。（紀錄在 ~/Library/Logs/Argus/uv-install.log）"
+    || fail "$(msg "安裝 uv 失敗，請檢查網路後再試。（紀錄在 ~/Library/Logs/Argus/uv-install.log）" \
+      "Couldn't install uv. Check the internet connection and try again. (Log: ~/Library/Logs/Argus/uv-install.log)" \
+      "uv をインストールできませんでした。ネットワークを確認して、もう一度お試しください。（ログ：~/Library/Logs/Argus/uv-install.log）" \
+      "uv를 설치하지 못했습니다. 인터넷 연결을 확인한 후 다시 시도하세요. (기록: ~/Library/Logs/Argus/uv-install.log)")"
 fi
 
 # the same Python the scanners are installed with (see core/argus/tools.py: python_spec)
@@ -58,7 +81,8 @@ PYSPEC=3.12
 
 # 3. start the local page in the background, so this launcher can finish
 rm -f "$STATE/url"
-note "Argus 正在啟動，第一次大約需要 1 分鐘…"
+note "$(msg "Argus 正在啟動，第一次大約需要 1 分鐘…" "Argus is starting. The first time takes about 1 minute…" \
+  "Argus を起動しています。初回は 1 分ほどかかります…" "Argus를 시작하는 중입니다. 처음에는 1분 정도 걸립니다…")"
 PYTHONPATH="$HERE/core" nohup uv run --no-project --python "$PYSPEC" python -m argus \
   </dev/null >"$LOGS/argus.log" 2>&1 &
 disown
@@ -66,5 +90,7 @@ for _ in $(seq 1 360); do
   [ -s "$STATE/url" ] && break
   sleep 0.5
 done
-[ -s "$STATE/url" ] || fail "Argus 沒有順利啟動。（紀錄在 ~/Library/Logs/Argus/argus.log）"
+[ -s "$STATE/url" ] || fail "$(msg "Argus 沒有順利啟動。（紀錄在 ~/Library/Logs/Argus/argus.log）" \
+  "Argus didn't start. (Log: ~/Library/Logs/Argus/argus.log)" "Argus を起動できませんでした。（ログ：~/Library/Logs/Argus/argus.log）" \
+  "Argus가 제대로 시작되지 않았습니다. (기록: ~/Library/Logs/Argus/argus.log)")"
 open "$(cat "$STATE/url")"

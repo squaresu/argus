@@ -1,11 +1,27 @@
 // Argus page: pick what to scan and which tools, follow the job, show the report.
 const TOKEN = document.querySelector('meta[name=argus-token]').content;
+
+// words in the page's language: the server puts {lang, html, catalog} in <script id="i18n">.
+// t('有 {n} 項', { n }) looks the source sentence up (falling back to it), picks one/other by n, fills {name}s.
+const I18N = (() => {
+  try { return JSON.parse(document.getElementById('i18n').textContent); } catch { return { lang: 'zh-TW', html: 'zh-Hant', catalog: {} }; }
+})();
+function t(text, kw = {}) {
+  let found = (I18N.catalog || {})[text];
+  if (found && typeof found === 'object') found = kw.n === 1 && found.one ? found.one : found.other;
+  if (typeof found !== 'string' || !found) found = text;
+  const fill = (s) => s.replace(/\{(\w+)\}/g, (m, k) => (k in kw ? String(kw[k]) : m));
+  // a translation naming a placeholder the sentence doesn't have shouldn't break the page
+  const names = (s) => (s.match(/\{\w+\}/g) || []).filter((m) => !(m.slice(1, -1) in kw));
+  return fill(names(found).length && !names(text).length ? text : found);
+}
+const join = (items) => items.join(t('、'));
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const VERDICT_CLASS = { SAFE: 'safe', CAUTION: 'caution', DO_NOT_INSTALL: 'danger', ERROR: 'error' };
-const VERDICT_ZH = { SAFE: '安全', CAUTION: '注意', DO_NOT_INSTALL: '不建議安裝', ERROR: '沒掃完' };
+const VERDICT_ZH = { SAFE: t('安全'), CAUTION: t('注意'), DO_NOT_INSTALL: t('不建議安裝'), ERROR: t('沒掃完') };
 const ADVICE_CLASS = { ok: 'safe', ask: 'caution', no: 'danger' };
-const adviceWord = (a, installed) => (a === 'ask' ? '先問人' : installed ? { ok: '可以繼續用', no: '不建議用' }[a] : { ok: '可以裝', no: '不建議裝' }[a]);
+const adviceWord = (a, installed) => (a === 'ask' ? t('先問人') : installed ? { ok: t('可以繼續用'), no: t('不建議用') }[a] : { ok: t('可以裝'), no: t('不建議裝') }[a]);
 
 let state = null;
 let picked = { folder: '', zip: '' };
@@ -19,12 +35,12 @@ async function api(path, body) {
     body: body ? JSON.stringify(body) : undefined,
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || `發生錯誤（${res.status}）`);
+  if (!res.ok) throw new Error(data.error || t('發生錯誤（{status}）', { status: res.status }));
   return data;
 }
 
 // 6. a question in Argus's own dialog (the browser's confirm box looks like a web page's warning)
-function ask(message, { title = '確定嗎？', ok = '確定', danger = false } = {}) {
+function ask(message, { title = t('確定嗎？'), ok = t('確定'), danger = false } = {}) {
   const d = $('#confirm');
   $('#confirm-title').textContent = title;
   $('#confirm-text').textContent = message;
@@ -43,10 +59,10 @@ function showError(message) {
 }
 
 function toast(text, ms = 4000) {
-  const t = document.createElement('div');
-  t.className = 'toast'; t.textContent = text;
-  document.body.appendChild(t);
-  setTimeout(() => t.remove(), ms);
+  const el = document.createElement('div');
+  el.className = 'toast'; el.textContent = text;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), ms);
 }
 
 function show(view) {
@@ -67,8 +83,8 @@ function renderTarget() {
   $('#detail-mcp').hidden = k !== 'mcp';
   $('#tools-card').hidden = k === 'mcp';   // the MCP check is Argus's own; no scanners involved
   if (k === 'folder' || k === 'zip') {
-    $('#pick').textContent = k === 'folder' ? '選擇資料夾…' : '選擇 zip 檔…';
-    $('#picked').textContent = picked[k] || '還沒選擇';
+    $('#pick').textContent = k === 'folder' ? t('選擇資料夾…') : t('選擇 zip 檔…');
+    $('#picked').textContent = picked[k] || t('還沒選擇');
     $('#picked').classList.toggle('set', !!picked[k]);
   }
   if (k === 'github') $('#url').focus();
@@ -94,14 +110,14 @@ function drawScanners() {
   if (checked === null) checked = new Set(list.filter((s) => s.default_on).map((s) => s.id));
   $('#scanners').innerHTML = list.map((s) => {
     const busy = installing && installing.id === s.id;
-    const button = (label) => `<button class="btn" type="button" data-install="${esc(s.id)}" ${installing ? 'disabled' : ''}>${label}</button>`;
+    const button = (label) => `<button class="btn" type="button" data-install="${esc(s.id)}" ${installing ? 'disabled' : ''}>${esc(label)}</button>`;
     const right = busy
-      ? `<span class="installing"><span class="spinner"></span><span id="inst-text">安裝中…</span></span>`
-      : s.status === 'ok' && s.outdated ? `<span class="fix"><span class="newer" title="現在的版本：${esc(s.version)}">可更新到 ${esc(s.newest)}</span>${button('更新')}</span>`
-      : s.status === 'ok' ? `<span class="badge ok" title="${esc(s.version)}">已安裝</span>`
-      : s.status === 'checking' ? `<span class="badge" title="正在確認這個工具能不能正常啟動">確認中…</span>`
-      : s.status === 'broken' ? `<span class="fix"><span class="badge bad">打不開</span>${button('重新安裝')}</span>`
-      : button('安裝');
+      ? `<span class="installing"><span class="spinner"></span><span id="inst-text">${esc(t('安裝中…'))}</span></span>`
+      : s.status === 'ok' && s.outdated ? `<span class="fix"><span class="newer" title="${esc(t('現在的版本：{version}', { version: s.version }))}">${esc(t('可更新到 {version}', { version: s.newest }))}</span>${button(t('更新'))}</span>`
+      : s.status === 'ok' ? `<span class="badge ok" title="${esc(s.version)}">${esc(t('已安裝'))}</span>`
+      : s.status === 'checking' ? `<span class="badge" title="${esc(t('正在確認這個工具能不能正常啟動'))}">${esc(t('確認中…'))}</span>`
+      : s.status === 'broken' ? `<span class="fix"><span class="badge bad">${esc(t('打不開'))}</span>${button(t('重新安裝'))}</span>`
+      : button(t('安裝'));
     return `<li class="scanner ${s.installed ? '' : 'off'}">
       <input type="checkbox" data-id="${esc(s.id)}" ${s.installed && checked.has(s.id) ? 'checked' : ''} ${s.installed ? '' : 'disabled'} aria-label="${esc(s.name)}">
       <div><span class="name">${esc(s.name)}</span><span class="vendor">${esc(s.vendor)} · ${esc(s.license)}</span><p>${esc(s.summary)}</p></div>
@@ -123,16 +139,18 @@ function renderToolsCard() {
   all.hidden = !todo.length || !!installing;
   all.dataset.ids = todo.map((s) => s.id).join(',');
   all.textContent = missing.length
-    ? `全部安裝（${missing.length} 個，約 ${Math.max(1, missing.length * 2)} 分鐘）` : `全部更新（${outdated.length} 個）`;
+    ? t('全部安裝（{n} 個，約 {minutes} 分鐘）', { n: missing.length, minutes: Math.max(1, missing.length * 2) })
+    : t('全部更新（{n} 個）', { n: outdated.length });
   // folded: one line saying what will be used; 調整 opens the list
   const folded = ready && !toolsOpen && !installing;
   const used = list.filter((s) => s.installed && checked.has(s.id)).length;
   $('#tools-summary').hidden = !ready;
   $('#tools-summary').setAttribute('aria-expanded', String(!folded));
   $('#tools-detail').hidden = folded;
-  $('#tools-summary-text').textContent = (used === list.length ? `${list.length} 個工具都裝好了，全部會用來檢查` : `會用 ${used} / ${list.length} 個工具檢查`)
-    + (outdated.length ? `　·　${outdated.length} 個有新版` : '');
-  $('#tools-summary-link').textContent = folded ? '調整' : '收起';
+  $('#tools-summary-text').textContent = (used === list.length ? t('{n} 個工具都裝好了，全部會用來檢查', { n: list.length })
+    : t('會用 {used} / {n} 個工具檢查', { used, n: list.length }))
+    + (outdated.length ? t('　·　{n} 個有新版', { n: outdated.length }) : '');
+  $('#tools-summary-link').textContent = folded ? t('調整') : t('收起');
 }
 
 function installAll() {
@@ -160,7 +178,10 @@ function renderUpdate() {
   $('#update-version').textContent = u.latest || '';
   $('#update-current').textContent = state.app.version;
   document.querySelectorAll('.update-download').forEach((a) => { a.href = u.url || 'https://github.com/squaresu/argus/releases/latest'; });
-  $('#about-update').textContent = !u.checked ? '正在檢查有沒有新版本…' : u.newer ? `有新版本 ${u.latest} 可以更新` : u.latest ? '已經是最新版' : u.failed ? `沒辦法檢查新版本：${u.error || '連不上 GitHub'}` : '';
+  $('#about-update').textContent = !u.checked ? t('正在檢查有沒有新版本…')
+    : u.newer ? t('有新版本 {version} 可以更新', { version: u.latest })
+    : u.latest ? t('已經是最新版')
+    : u.failed ? t('沒辦法檢查新版本：{err}', { err: u.error || t('連不上 GitHub') }) : '';
   // the check runs in the background right after Argus starts; look again until it has answered
   clearTimeout(renderUpdate.timer);
   if (!u.checked) renderUpdate.timer = setTimeout(() => loadState().catch(() => {}), 1000);
@@ -174,20 +195,20 @@ function renderCompanion() {
   $('#skill-toggle').checked = !!c.skill;
   $('#auto-toggle').checked = !!c.autocheck;
   $('#auto-toggle').disabled = !c.autocheck_supported;
-  const t = $('#auto-text');
-  t.dataset.mac = t.dataset.mac || t.textContent;
-  t.textContent = c.autocheck_supported ? t.dataset.mac
-    : '自動檢查目前只有 Mac 版，Windows 版之後會加上。打開 Argus 時的「重新檢查提醒」一樣會告訴你哪些技能有更新。';
+  const el = $('#auto-text');
+  el.dataset.mac = el.dataset.mac || el.textContent;
+  el.textContent = c.autocheck_supported ? el.dataset.mac
+    : t('自動檢查目前只有 Mac 版，Windows 版之後會加上。打開 Argus 時的「重新檢查提醒」一樣會告訴你哪些技能有更新。');
 }
 async function toggleCompanion(el, path, question) {
   const on = el.checked;
-  if (on && question && !(await ask(question, { title: '開啟自動檢查？', ok: '開啟' }))) { el.checked = false; return; }
+  if (on && question && !(await ask(question, { title: t('開啟自動檢查？'), ok: t('開啟') }))) { el.checked = false; return; }
   el.disabled = true;
   try {
     const r = await api(path, { on });
     toast(path === '/api/claude-skill'
-      ? (r.skill ? '已經加到 Claude ✓ 下次在 Claude Code 說「幫我檢查這個技能」就會用 Argus。' : '已經從 Claude 移除。')
-      : (r.autocheck ? '已開啟自動檢查 ✓' : '已關閉自動檢查。'), 6000);
+      ? (r.skill ? t('已經加到 Claude ✓ 下次在 Claude Code 說「幫我檢查這個技能」就會用 Argus。') : t('已經從 Claude 移除。'))
+      : (r.autocheck ? t('已開啟自動檢查 ✓') : t('已關閉自動檢查。')), 6000);
   } catch (err) { el.checked = !on; showError(err.message); }
   el.disabled = false;
   loadState().catch(() => {});
@@ -206,18 +227,18 @@ function renderReminder() {
     if (!r.checked) renderReminder.timer = setTimeout(() => loadState().catch(() => {}), 2000);
     return;
   }
-  const names = (list, count) => list.join('、') + (count > list.length ? ` 等 ${count} 個` : '');
+  const names = (list, count) => (count > list.length ? t('{names} 等 {n} 個', { names: join(list), n: count }) : join(list));
   const parts = [];
-  if (r.changed_count) parts.push(`${r.changed_count} 個在上次檢查後有更新（${names(r.changed, r.changed_count)}）`);
-  if (r.new_count && !r.never) parts.push(`${r.new_count} 個是新裝的（${names(r.new, r.new_count)}）`);
-  if (r.stale_count) parts.push(`${r.stale_count} 個超過 30 天沒檢查`);
-  $('#remind-title').textContent = r.never ? `還沒檢查過這台電腦上的 Claude 技能（共 ${r.total} 個）` : '你的 Claude 技能該重新檢查了';
-  $('#remind-text').textContent = r.never ? '檢查一次，之後技能有更新時 Argus 會提醒你。' : `其中 ${parts.join('，')}。`;
+  if (r.changed_count) parts.push(t('{n} 個在上次檢查後有更新（{names}）', { n: r.changed_count, names: names(r.changed, r.changed_count) }));
+  if (r.new_count && !r.never) parts.push(t('{n} 個是新裝的（{names}）', { n: r.new_count, names: names(r.new, r.new_count) }));
+  if (r.stale_count) parts.push(t('{n} 個超過 30 天沒檢查', { n: r.stale_count }));
+  $('#remind-title').textContent = r.never ? t('還沒檢查過這台電腦上的 Claude 技能（共 {n} 個）', { n: r.total }) : t('你的 Claude 技能該重新檢查了');
+  $('#remind-text').textContent = r.never ? t('檢查一次，之後技能有更新時 Argus 會提醒你。') : t('其中 {parts}。', { parts: parts.join(t('，')) });
 }
 
 async function startUpdate() {
-  if (!(await ask('Argus 會下載新版、換掉現在這一版，再自動重新打開。正在進行的工作會被中斷。',
-    { title: `更新到 Argus ${state.update.latest}？`, ok: '立即更新' }))) return;
+  if (!(await ask(t('Argus 會下載新版、換掉現在這一版，再自動重新打開。正在進行的工作會被中斷。'),
+    { title: t('更新到 Argus {version}？', { version: state.update.latest }), ok: t('立即更新') }))) return;
   try { watchUpdate((await api('/api/update', {})).id); } catch (err) { showError(err.message); }
 }
 
@@ -240,8 +261,8 @@ async function watchUpdate(jobId) {
       await api('/api/relaunch', {});
       $('#updated').showModal();
     } catch (err) {
-      $('#updated-title').textContent = '更新完成，請重新打開 Argus';
-      $('#updated-text').textContent = '新版已經裝好了。關掉這個分頁，再從「應用程式」點兩下 Argus 就好。';
+      $('#updated-title').textContent = t('更新完成，請重新打開 Argus');
+      $('#updated-text').textContent = t('新版已經裝好了。關掉這個分頁，再從「應用程式」點兩下 Argus 就好。');
       $('#updated').showModal();
     }
     return;
@@ -259,9 +280,11 @@ function historyLine(r) {
   const a = r.advice;
   if (!a) return sourceName(r.title);
   if (r.skills === 1) return adviceWord(a.no ? 'no' : a.ask ? 'ask' : 'ok', r.installed);
-  if (a.no) return `${a.no} 個${adviceWord('no', r.installed)}` + (a.ask ? `、${a.ask} 個先問人` : '');
-  if (a.ask) return `${a.ask} 個先問人，其他${adviceWord('ok', r.installed)}`;
-  return `全部${adviceWord('ok', r.installed)}`;
+  const used = r.installed;   // 用 for skills already installed, 裝 for ones not yet installed
+  if (a.no && a.ask) return used ? t('{n} 個不建議用、{ask} 個先問人', { n: a.no, ask: a.ask }) : t('{n} 個不建議裝、{ask} 個先問人', { n: a.no, ask: a.ask });
+  if (a.no) return used ? t('{n} 個不建議用', { n: a.no }) : t('{n} 個不建議裝', { n: a.no });
+  if (a.ask) return used ? t('{n} 個先問人，其他可以繼續用', { n: a.ask }) : t('{n} 個先問人，其他可以裝', { n: a.ask });
+  return used ? t('全部可以繼續用') : t('全部可以裝');
 }
 
 let historyAll = false;
@@ -284,27 +307,33 @@ function drawHistory() {
   if (!upFront && card.nextSibling !== historyHome) historyHome.before(card);
   const shown = upFront && !historyAll ? h.slice(0, 3) : h.slice(0, 12);
   $('#history-more').hidden = !upFront || h.length <= 3;
-  $('#history-more').textContent = historyAll ? '收起' : `看全部 ${Math.min(h.length, 12)} 份`;
+  $('#history-more').textContent = historyAll ? t('收起') : t('看全部 {n} 份', { n: Math.min(h.length, 12) });
   $('#history').innerHTML = shown.map((r) => {
     const dots = r.advice
       ? ['no', 'ask', 'ok'].filter((a) => r.advice[a]).map((a) => `<span class="dot ${ADVICE_CLASS[a]}" title="${adviceWord(a, r.installed)}">${r.advice[a]}</span>`).join('')
       : ['DO_NOT_INSTALL', 'CAUTION', 'SAFE', 'ERROR']
         .filter((v) => r.counts?.[v]).map((v) => `<span class="dot ${VERDICT_CLASS[v]}" title="${VERDICT_ZH[v]}">${r.counts[v]}</span>`).join('');
-    const unit = r.title === '我的 MCP 伺服器' ? '個 MCP 伺服器' : '個技能';
+    // the MCP report's title: in the language it was made in (older reports: always Chinese)
+    const isMcp = r.title === t('我的 MCP 伺服器')
+      || r.title === '我的 MCP 伺服器';   // i18n: keep (a stored title from before Argus spoke other languages)
+    const count = isMcp ? t('{n} 個 MCP 伺服器', { n: r.skills }) : t('{n} 個技能', { n: r.skills });
     const line = historyLine(r);
     const source = sourceName(r.title);
     // an older report has no conclusion line: its source is the title, so don't say it twice
-    const sub = [line === source ? '' : source, r.when, `${r.skills} ${unit}`].filter(Boolean).join(' · ');
-    return `<li data-file="${esc(r.file)}" tabindex="0" role="button" aria-label="打開報告：${esc(line)}，${esc(r.when)}" title="${esc(r.title)}">
+    const sub = [line === source ? '' : source, r.when, count].filter(Boolean).join(' · ');
+    return `<li data-file="${esc(r.file)}" tabindex="0" role="button" aria-label="${esc(t('打開報告：{name}，{when}', { name: line, when: r.when }))}" title="${esc(r.title)}">
       <div class="h-main"><span class="h-title">${esc(line)}</span>
         <span class="h-when">${esc(sub)}</span></div>
       <span class="dots">${dots}</span>
-      <button class="h-del" type="button" data-del="${esc(r.file)}" aria-label="刪除這份報告" title="刪除這份報告">${TRASH}</button></li>`;
+      <button class="h-del" type="button" data-del="${esc(r.file)}" aria-label="${esc(t('刪除這份報告'))}" title="${esc(t('刪除這份報告'))}">${TRASH}</button></li>`;
   }).join('');
 }
 
 // before a scan: how many skills and roughly how long (asked again when the target or the tools change)
-const minutes = (s) => (s < 60 ? '不到 1 分鐘' : s < 3600 ? `大約 ${Math.round(s / 60)} 分鐘` : `大約 ${(s / 3600).toFixed(1)} 小時`);
+// short: 約 instead of 大約, where the sentence already says 預估
+const minutes = (s, short = false) => (s < 60 ? t('不到 1 分鐘')
+  : s < 3600 ? (short ? t('約 {n} 分鐘', { n: Math.round(s / 60) }) : t('大約 {n} 分鐘', { n: Math.round(s / 60) }))
+  : (short ? t('約 {n} 小時', { n: (s / 3600).toFixed(1) }) : t('大約 {n} 小時', { n: (s / 3600).toFixed(1) })));
 async function renderEstimate() {
   const k = kind();
   const el = $('#start-estimate');
@@ -316,8 +345,8 @@ async function renderEstimate() {
     const e = await api('/api/estimate', { kind: k, value: picked[k] || '', scanners: tools });
     if (renderEstimate.ask !== ask) return;   // the choice changed while asking
     el.textContent = e.skills === null
-      ? `下載後才知道有幾個技能；每個技能${minutes(e.per_skill)}。`
-      : e.skills ? `共 ${e.skills} 個技能，預估${minutes(e.seconds)}。` : '';
+      ? t('下載後才知道有幾個技能；每個技能{time}。', { time: minutes(e.per_skill) })
+      : e.skills ? t('共 {n} 個技能，預估{time}。', { n: e.skills, time: minutes(e.seconds) }) : '';
   } catch { el.textContent = ''; }
 }
 
@@ -325,16 +354,18 @@ function validate() {
   const k = kind();
   const tools = state ? state.scanners.filter((s) => s.installed && checked?.has(s.id)) : [];
   let hint = '';
+  let blocked = false;   // the hint names something to do first
+  const need = (text) => { blocked = true; return text; };
   if (!state) hint = '';
   else if (k === 'mcp') hint = '';
-  else if (!state.scanners.some((s) => s.installed)) hint = '先安裝至少一個掃描工具（建議從 SkillSpector 開始）。';
-  else if (!tools.length) hint = '請至少勾選一個工具。';
-  else if ((k === 'folder' || k === 'zip') && !picked[k]) hint = k === 'folder' ? '請先選擇資料夾。' : '請先選擇 zip 檔。';
-  else if (k === 'github' && !/^https?:\/\/(www\.)?github\.com\/[^/]+\/[^/]+/.test($('#url').value.trim())) hint = '請貼上 GitHub 網址。';
-  else if (k === 'claude' && !state.claude_found) hint = '這台電腦上好像沒有 Claude 的技能資料夾，不過還是可以試試看。';
-  if (state?.running) hint = '有工作正在進行…';
+  else if (!state.scanners.some((s) => s.installed)) hint = need(t('先安裝至少一個掃描工具（建議從 SkillSpector 開始）。'));
+  else if (!tools.length) hint = need(t('請至少勾選一個工具。'));
+  else if ((k === 'folder' || k === 'zip') && !picked[k]) hint = need(k === 'folder' ? t('請先選擇資料夾。') : t('請先選擇 zip 檔。'));
+  else if (k === 'github' && !/^https?:\/\/(www\.)?github\.com\/[^/]+\/[^/]+/.test($('#url').value.trim())) hint = need(t('請貼上 GitHub 網址。'));
+  else if (k === 'claude' && !state.claude_found) hint = t('這台電腦上好像沒有 Claude 的技能資料夾，不過還是可以試試看。');
+  if (state?.running) hint = t('有工作正在進行…');
   $('#start-hint').textContent = hint;
-  $('#start').disabled = !!state?.running || (k !== 'mcp' && !tools.length) || /^請|^先/.test(hint);
+  $('#start').disabled = !!state?.running || (k !== 'mcp' && !tools.length) || blocked;
   clearTimeout(validate.timer);
   validate.timer = setTimeout(renderEstimate, 300);
 }
@@ -347,14 +378,15 @@ async function loadState() {
   $('#copyright').textContent = state.app.copyright;
   // wording for this system: Finder or 檔案總管, and which manual-update steps to show
   const win = state.app.platform === 'win';
-  document.querySelectorAll('.file-manager').forEach((el) => { el.textContent = win ? '檔案總管' : ' Finder '; });
+  document.querySelectorAll('.file-manager').forEach((el) => { el.textContent = win ? t('檔案總管') : ' Finder '; });
   document.querySelectorAll('[data-os]').forEach((el) => { el.hidden = el.dataset.os !== (win ? 'win' : 'mac'); });
   $('#disclaimer-short').textContent = `⚠︎ ${state.app.disclaimer_short}`;
   $('#about-disclaimer').textContent = state.app.disclaimer;
   $('#about-copyright').textContent = state.app.copyright;
-  $('#about-version').textContent = `${state.app.tagline} · 版本 ${state.app.version}`;
+  $('#about-version').textContent = t('{tagline} · 版本 {version}', { tagline: state.app.tagline, version: state.app.version });
   $('#licences').innerHTML = state.scanners.map((s) =>
-    `<li><a href="${esc(s.homepage)}" target="_blank" rel="noopener">${esc(s.name)}</a>（${esc(s.vendor)}）— ${esc(s.license)}</li>`).join('');
+    `<li><a href="${esc(s.homepage)}" target="_blank" rel="noopener">${esc(s.name)}</a>${esc(t('（{vendor}）— {license}', { vendor: s.vendor, license: s.license }))}</li>`).join('');
+  renderLang();
   renderUpdate();
   renderReminder();
   renderCompanion();
@@ -373,13 +405,13 @@ function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
 let following = null;
 
-const ITEM_WORD = { ok: '可以', ask: '先問人', no: '不建議' };
+const ITEM_WORD = { ok: t('可以'), ask: t('先問人'), no: t('不建議') };
 function renderItems(items) {
   $('#p-items').hidden = items.length < 2;
   $('#p-items').innerHTML = items.map((it) => {
     const right = it.advice ? `<span class="pill-sm ${ADVICE_CLASS[it.advice]}">${ITEM_WORD[it.advice]}</span>`
       : it.done ? `<span class="p-run"><span class="spinner"></span>${it.done} / ${it.total}</span>`
-      : '<span class="p-wait">等待中</span>';
+      : `<span class="p-wait">${esc(t('等待中'))}</span>`;
     return `<li class="${it.advice ? 'done' : it.done ? 'run' : ''}"><span class="p-name">${esc(it.name)}</span>${right}</li>`;
   }).join('');
 }
@@ -392,16 +424,17 @@ async function follow(jobId) {
     if (following !== jobId) return;
     let job;
     try { job = await api(`/api/job/${jobId}`); } catch (err) { await sleep(1500); continue; }
-    $('#p-title').textContent = job.status === 'running' ? (job.cancelled ? '正在停止…' : '正在檢查…') : job.status === 'done' ? '檢查完成' : '沒有完成';
+    $('#p-title').textContent = job.status === 'running' ? (job.cancelled ? t('正在停止…') : t('正在檢查…')) : job.status === 'done' ? t('檢查完成') : t('沒有完成');
     $('#p-stop').hidden = job.status !== 'running' || job.kind !== 'scan';
     $('#p-stop').disabled = !!job.cancelled;
     if (job.status === 'running' && !job.total) $('#p-bar').style.width = '4%';
     $('#p-current').textContent = job.status === 'error' ? job.error : job.current;
     $('#p-bar').style.width = job.total ? `${Math.round((job.done / job.total) * 100)}%` : '4%';
     const clock = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
-    const left = job.remaining == null ? '' : job.remaining < 60 ? ' · 快好了' : ` · 預估還要${minutes(job.remaining).replace('大約', '約')}`;
+    const left = job.remaining == null ? '' : ' · ' + (job.remaining < 60 ? t('快好了') : t('預估還要{time}', { time: minutes(job.remaining, true) }));
     $('#p-count').textContent = job.status === 'running'
-      ? `${job.total ? `${job.done} / ${job.total} · ` : ''}已經過 ${clock(job.elapsed)}${left}` : (job.total ? `${job.done} / ${job.total}` : '');
+      ? (job.total ? `${job.done} / ${job.total} · ` : '') + t('已經過 {time}', { time: clock(job.elapsed) }) + left
+      : (job.total ? `${job.done} / ${job.total}` : '');
     $('#p-log').textContent = job.log.join('\n');
     renderItems(job.items || []);
     if (job.status !== 'running') {
@@ -445,12 +478,12 @@ async function watchInstall(id, jobId, ids = [id]) {
     let j;
     try { j = await api(`/api/job/${jobId}`); } catch { continue; }
     if (j.target && j.target !== installing.id && j.status === 'running') { installing.id = j.target; renderScanners(); }
-    const t = $('#inst-text'); if (t) t.textContent = j.current;
+    const text = $('#inst-text'); if (text) text.textContent = j.current;
     if (j.status !== 'running') {
       installing = null;
       ids.forEach((x) => checked.add(x));
       await loadState().catch(() => {});
-      if (j.status === 'done') toast(ids.length > 1 ? '全部安裝完成 ✓' : '安裝完成 ✓'); else showError(j.error);
+      if (j.status === 'done') toast(ids.length > 1 ? t('全部安裝完成 ✓') : t('安裝完成 ✓')); else showError(j.error);
       return;
     }
   }
@@ -507,7 +540,7 @@ $('#update-how').addEventListener('click', () => $('#update-steps').showModal())
 $('#update-now').addEventListener('click', startUpdate);
 $('#check-update').addEventListener('click', async () => {
   $('#check-update').disabled = true;
-  $('#about-update').textContent = '正在檢查…';
+  $('#about-update').textContent = t('正在檢查…');
   try {
     state.update = await api('/api/check-update', {});
     try { localStorage.removeItem('argus-update-dismissed'); } catch {}   // asked on purpose: show it even if dismissed
@@ -529,21 +562,21 @@ $('#remind-later').addEventListener('click', () => {
 });
 $('#skill-toggle').addEventListener('change', (ev) => toggleCompanion(ev.target, '/api/claude-skill'));
 $('#auto-toggle').addEventListener('change', (ev) => toggleCompanion(ev.target, '/api/autocheck',
-  '開啟後，從現在開始新裝或更新的 Claude 技能會在背景自動檢查。\n\n現在已經裝好的技能不會自動重掃；想檢查的話，用「我的 Claude 技能」掃一次就好。'));
+  t('開啟後，從現在開始新裝或更新的 Claude 技能會在背景自動檢查。\n\n現在已經裝好的技能不會自動重掃；想檢查的話，用「我的 Claude 技能」掃一次就好。')));
 $('#update-later').addEventListener('click', () => {
   try { localStorage.setItem('argus-update-dismissed', state.update.latest); } catch {}
   $('#update').hidden = true;
 });
 $('#quit').addEventListener('click', async () => {
-  if (!(await ask('正在進行的掃描或安裝會被中斷。之後點兩下 Argus 就能重新打開。', { title: '結束 Argus？', ok: '結束', danger: true }))) return;
+  if (!(await ask(t('正在進行的掃描或安裝會被中斷。之後點兩下 Argus 就能重新打開。'), { title: t('結束 Argus？'), ok: t('結束'), danger: true }))) return;
   try { await api('/api/quit', {}); } catch {}
-  document.body.innerHTML = '<p style="text-align:center;margin-top:30vh;font-size:16px">Argus 已經結束，可以關掉這個分頁了。</p>';
+  document.body.innerHTML = `<p style="text-align:center;margin-top:30vh;font-size:16px">${esc(t('Argus 已經結束，可以關掉這個分頁了。'))}</p>`;
 });
 $('#history').addEventListener('click', async (ev) => {
   const del = ev.target.closest('[data-del]');
   if (del) {
-    if (!(await ask('刪除後就找不回來了。', { title: '刪除這份報告？', ok: '刪除', danger: true }))) return;
-    try { await api('/api/delete-report', { file: del.dataset.del }); await loadState(); toast('已刪除。'); } catch (err) { showError(err.message); }
+    if (!(await ask(t('刪除後就找不回來了。'), { title: t('刪除這份報告？'), ok: t('刪除'), danger: true }))) return;
+    try { await api('/api/delete-report', { file: del.dataset.del }); await loadState(); toast(t('已刪除。')); } catch (err) { showError(err.message); }
     return;
   }
   const li = ev.target.closest('li[data-file]');
@@ -559,11 +592,11 @@ $('#tools-summary').addEventListener('click', () => { toolsOpen = $('#tools-summ
 $('#open-reports').addEventListener('click', () => api('/api/open', {}).catch((e) => toast(e.message)));
 // About: three tabs, so nothing needs a long scroll; the footer link opens straight onto 隱私
 function showTab(name) {
-  document.querySelectorAll('#about [role=tab]').forEach((t) => {
-    const on = t.dataset.tab === name;
-    t.setAttribute('aria-selected', on);
-    t.tabIndex = on ? 0 : -1;
-    $(`#panel-${t.dataset.tab}`).hidden = !on;
+  document.querySelectorAll('#about [role=tab]').forEach((tab) => {
+    const on = tab.dataset.tab === name;
+    tab.setAttribute('aria-selected', on);
+    tab.tabIndex = on ? 0 : -1;
+    $(`#panel-${tab.dataset.tab}`).hidden = !on;
   });
   $('#about-body').scrollTop = 0;
 }
@@ -571,9 +604,9 @@ function openAbout(tab = 'intro') { showTab(tab); $('#about').showModal(); }
 $('#about-open').addEventListener('click', () => openAbout());
 $('#about-open-2').addEventListener('click', () => openAbout('privacy'));
 const tabs = [...document.querySelectorAll('#about [role=tab]')];
-tabs.forEach((t, i) => {
-  t.addEventListener('click', () => showTab(t.dataset.tab));
-  t.addEventListener('keydown', (ev) => {   // arrow keys move between tabs
+tabs.forEach((tab, i) => {
+  tab.addEventListener('click', () => showTab(tab.dataset.tab));
+  tab.addEventListener('keydown', (ev) => {   // arrow keys move between tabs
     const step = { ArrowRight: 1, ArrowLeft: -1 }[ev.key];
     if (!step) return;
     const next = tabs[(i + step + tabs.length) % tabs.length];
@@ -586,9 +619,9 @@ document.querySelectorAll('dialog').forEach((d) => d.addEventListener('click', (
 // 深色 (default) or 淺色; remembered on this computer, and passed on to a report open in the frame
 function applyTheme(theme) {
   document.documentElement.dataset.theme = theme;
-  const next = theme === 'dark' ? '淺色' : '深色';
-  $('#theme').setAttribute('aria-label', `切換成${next}模式`);
-  $('#theme').title = `切換成${next}模式`;
+  const label = theme === 'dark' ? t('切換成淺色模式') : t('切換成深色模式');
+  $('#theme').setAttribute('aria-label', label);
+  $('#theme').title = label;
   try { $('#report-frame').contentDocument?.documentElement.setAttribute('data-theme', theme); } catch {}
 }
 applyTheme(document.documentElement.dataset.theme || 'dark');
@@ -596,6 +629,33 @@ $('#theme').addEventListener('click', () => {
   const theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
   try { localStorage.setItem('argus-theme', theme); } catch {}
   applyTheme(theme);
+});
+
+// 語言: 跟隨系統, or one of Argus's languages, each written in its own script; the page reloads in it
+function renderLang() {
+  const l = state.lang;
+  const sel = $('#lang');
+  if (!l || sel.disabled) return;
+  if (sel.options.length === 1) {
+    for (const [code, name] of Object.entries(l.all)) {
+      const o = new Option(name, code);
+      o.lang = code;
+      sel.add(o);
+    }
+  }
+  sel.value = l.chosen || '';
+}
+$('#lang').addEventListener('change', async (ev) => {
+  const sel = ev.target;
+  sel.disabled = true;
+  try {
+    await api('/api/lang', { lang: sel.value || null });
+    location.reload();
+  } catch (err) {
+    sel.disabled = false;
+    sel.value = state?.lang?.chosen || '';
+    showError(err.message);
+  }
 });
 
 // keep the local server alive while this page is open; say so if it has gone away
@@ -607,15 +667,15 @@ renderTarget();
 loadState().catch((err) => showError(err.message));
 $('#error-close').addEventListener('click', () => { $('#error-box').hidden = true; });
 $('#error-copy').addEventListener('click', async () => {
-  try { await navigator.clipboard.writeText($('#error-text').textContent); $('#error-copy').textContent = '已複製 ✓'; }
-  catch { $('#error-copy').textContent = '複製失敗，請手動選取'; }
-  setTimeout(() => { $('#error-copy').textContent = '複製錯誤訊息'; }, 2500);
+  try { await navigator.clipboard.writeText($('#error-text').textContent); $('#error-copy').textContent = t('已複製 ✓'); }
+  catch { $('#error-copy').textContent = t('複製失敗，請手動選取'); }
+  setTimeout(() => { $('#error-copy').textContent = t('複製錯誤訊息'); }, 2500);
 });
 // 4. 停止檢查: what finished becomes the report
 $('#p-stop').addEventListener('click', async () => {
   const id = following;
   if (!id) return;
-  if (!(await ask('已經檢查完的技能會做成報告；還沒檢查的就不檢查了。', { title: '停止檢查？', ok: '停止', danger: true }))) return;
+  if (!(await ask(t('已經檢查完的技能會做成報告；還沒檢查的就不檢查了。'), { title: t('停止檢查？'), ok: t('停止'), danger: true }))) return;
   if (following !== id) return;   // it finished while the question was open
   $('#p-stop').disabled = true;
   try { await api('/api/cancel', { id }); } catch (err) { showError(err.message); $('#p-stop').disabled = false; }
