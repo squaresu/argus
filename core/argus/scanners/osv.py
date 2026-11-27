@@ -18,7 +18,8 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-from .. import VERSION, tools
+from .. import VERSION, i18n, tools
+from ..i18n import N_, _
 from ..model import Finding, Outcome
 from .base import Scanner, failed
 
@@ -31,7 +32,7 @@ LOCKFILES = {'package-lock.json', 'npm-shrinkwrap.json', 'yarn.lock', 'pnpm-lock
              'composer.lock', 'pubspec.lock', 'mix.lock', 'packages.lock.json', 'gradle.lockfile', 'pom.xml'}
 REQUIREMENTS = re.compile(r'^requirements[\w.-]*\.txt$', re.I)
 SKIP_DIRS = {'.git', 'node_modules', '__pycache__', '.venv', 'venv'}
-TIP = ('套件有漏洞不代表技能有惡意，只表示它用的某個套件版本比較舊。影響大小要看技能有沒有用到出問題的那部分；'
+TIP = N_('套件有漏洞不代表技能有惡意，只表示它用的某個套件版本比較舊。影響大小要看技能有沒有用到出問題的那部分；'
        '技能作者升級到修好的版本就能解決。')
 
 
@@ -63,7 +64,7 @@ def _get(url, limit):
                 raise
             data = out.read_bytes()
     if len(data) > limit:
-        raise OSError('下載的檔案大小不對')
+        raise OSError(_('下載的檔案大小不對'))
     return data
 
 
@@ -84,10 +85,10 @@ def install_binary():
     sums = _get(base + 'osv-scanner_SHA256SUMS', 1 << 20).decode('utf-8', 'replace')
     expected = next((line.split()[0] for line in sums.splitlines() if line.strip().endswith(' ' + name)), '')
     if not expected:
-        raise OSError(f'OSV-Scanner {version} 沒有這台電腦能用的版本（{name}）。')
+        raise OSError(_('OSV-Scanner {version} 沒有這台電腦能用的版本（{name}）。', version=version, name=name))
     data = _get(base + name, MAX_BINARY)
     if hashlib.sha256(data).hexdigest() != expected.lower():
-        raise OSError('下載的 OSV-Scanner 跟官方公布的檢查碼不符，已經停止安裝。')
+        raise OSError(_('下載的 OSV-Scanner 跟官方公布的檢查碼不符，已經停止安裝。'))
     tools.TOOL_BIN.mkdir(parents=True, exist_ok=True)
     dest = tools.TOOL_BIN / exe_name()
     tmp = dest.with_name(dest.name + '.part')
@@ -137,15 +138,17 @@ def parse(data, root='') -> Outcome:
                 summary = next((v.get('summary') or v.get('details', '') for v in vulns if v.get('id') in ids), '')
                 fixed = fixed_version(vulns, ids, name)
                 if any(i.startswith('MAL-') for i in ids):
-                    f = Finding(scanner='osv', title='用到被通報為惡意的套件', severity='CRITICAL', file=path,
-                                what=f'{name} {version}（{eco}）被列在 OSV.dev 的惡意套件清單裡，裝了它就可能執行有害的程式。',
-                                tip='不要安裝這個技能，除非作者已經換掉這個套件。', rule=ids[0], category='malicious-package',
+                    f = Finding(scanner='osv', title=_('用到被通報為惡意的套件'), severity='CRITICAL', file=path,
+                                what=_('{name} {version}（{eco}）被列在 OSV.dev 的惡意套件清單裡，裝了它就可能執行有害的程式。',
+                                       name=name, version=version, eco=eco),
+                                tip=_('不要安裝這個技能，除非作者已經換掉這個套件。'), rule=ids[0], category='malicious-package',
                                 snippet=f'{name} {version}', detail=f'osv: {summary[:300]}')
                 else:
-                    f = Finding(scanner='osv', title='套件有已知漏洞', severity=severity_of(g.get('max_severity')),
-                                file=path, what=f'{name} {version}（{eco}）有已知漏洞：{"、".join(names[:3])}。'
-                                + (f'修好的版本是 {fixed}。' if fixed else '目前還沒有修好的版本。'),
-                                tip=TIP, rule=ids[0] if ids else '', category='known-vulnerability',
+                    f = Finding(scanner='osv', title=_('套件有已知漏洞'), severity=severity_of(g.get('max_severity')),
+                                file=path, what=_('{name} {version}（{eco}）有已知漏洞：{ids}。', name=name, version=version,
+                                                  eco=eco, ids=i18n.join(names[:3]))
+                                + (_('修好的版本是 {fixed}。', fixed=fixed) if fixed else _('目前還沒有修好的版本。')),
+                                tip=_(text=TIP), rule=ids[0] if ids else '', category='known-vulnerability',
                                 snippet=f'{name} {version}', detail=f'osv: {summary[:300]}')
                 findings.append(f)
     if any(f.category == 'malicious-package' for f in findings):
@@ -173,7 +176,7 @@ class OsvScanner(Scanner):
     vendor = 'Google'
     license = 'Apache-2.0'
     homepage = 'https://github.com/google/osv-scanner'
-    summary = '檢查技能用到的套件有沒有已知漏洞或被通報為惡意。會把套件名稱和版本送到 OSV.dev 查詢（不會送出技能內容）。'
+    summary = N_('檢查技能用到的套件有沒有已知漏洞或被通報為惡意。會把套件名稱和版本送到 OSV.dev 查詢（不會送出技能內容）。')
     order = 50
     exe = 'osv-scanner'
     needs_uv = False
@@ -202,12 +205,12 @@ class OsvScanner(Scanner):
         code, out, err = tools.run([tools.find_exe(self.exe), 'scan', 'source', '-r', '--no-resolve', '--format', 'json',
                                     '--experimental-exclude', 'node_modules', '.'], cwd=skill_dir, timeout=600)
         if code == 128:
-            return Outcome(self.id, 'SKIPPED', note='OSV-Scanner：沒有找到寫明版本的套件清單。')
+            return Outcome(self.id, 'SKIPPED', note=_('OSV-Scanner：沒有找到寫明版本的套件清單。'))
         try:
             data = json.loads(out)
         except ValueError:
             if 'osv.dev' in err or 'request failed' in err:
-                return failed(self.id, '連不上 OSV.dev（查漏洞的資料庫），請確認網路後再試。')
+                return failed(self.id, _('連不上 OSV.dev（查漏洞的資料庫），請確認網路後再試。'))
             return failed(self.id, tools.last_lines(err))
         return parse(data, skill_dir)
 

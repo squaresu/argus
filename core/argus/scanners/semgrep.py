@@ -10,6 +10,7 @@ import re
 from pathlib import Path
 
 from .. import tools
+from ..i18n import N_, _
 from ..model import Finding, Outcome, clip, is_documentation, is_type_definitions
 from .base import Scanner, failed, has_files
 
@@ -19,40 +20,40 @@ SH_EXT = {'.sh', '.bash', '.zsh', '.command'}
 
 # rule → (title, what it means, severity)
 RULE_ZH = {
-    'decode-and-run': ('解開隱藏的文字後當程式執行', '先把一段編碼過的文字解開，再直接當成程式執行。這是藏惡意程式最常見的手法，正常的技能幾乎不會這樣寫。', 'CRITICAL'),
-    'run-text-as-code': ('把文字當程式執行', '用 eval、new Function 或 vm 執行一段文字。文字內容如果來自網路或使用者，等於可以執行任何程式。', 'HIGH'),
-    'exec-command': ('執行組出來的指令', '用 exec 透過 shell 執行指令，而且指令是用變數拼出來的。內容如果夾帶外部輸入，可能被改成執行別的指令。', 'HIGH'),
-    'spawn-shell': ('透過 shell 執行程式', '啟動其他程式時開了 shell: true，參數會被 shell 解讀，比較容易被夾帶指令。', 'MEDIUM'),
-    'dump-env': ('一次讀出所有環境變數', '把所有環境變數整包讀出來。環境變數裡常有 API 金鑰和權杖，如果接著送到網路上就是外流。', 'HIGH'),
-    'sensitive-path': ('提到存放機密的檔案', '程式裡出現 SSH 金鑰、雲端帳號憑證、瀏覽器 Cookie 或密碼這類檔案的位置。一般技能用不到這些檔案。', 'HIGH'),
-    'startup-file': ('提到開機或 Claude 設定檔', '程式裡出現 .zshrc、LaunchAgents、crontab 或 Claude 設定檔的位置。改動這些檔案，可以讓程式在每次開機或打開 Claude 時自動執行。', 'HIGH'),
-    'throwaway-endpoint': ('連到常被用來收集資料的服務', '程式會連到 Discord／Telegram 機器人、webhook.site、ngrok 這類服務。正常技能偶爾會用，但這也是偷資料時最常用的收件地址。', 'HIGH'),
-    'raw-ip': ('直接連到 IP 位址', '程式直接連到一串數字的 IP 位址，而不是一般網站的名字，比較難看出它連去哪裡。', 'MEDIUM'),
-    'tls-off': ('關掉 HTTPS 安全檢查', '連線時關掉了憑證檢查，傳輸的內容可能被同一個網路上的人看到或竄改。', 'MEDIUM'),
+    'decode-and-run': (N_('解開隱藏的文字後當程式執行'), N_('先把一段編碼過的文字解開，再直接當成程式執行。這是藏惡意程式最常見的手法，正常的技能幾乎不會這樣寫。'), 'CRITICAL'),
+    'run-text-as-code': (N_('把文字當程式執行'), N_('用 eval、new Function 或 vm 執行一段文字。文字內容如果來自網路或使用者，等於可以執行任何程式。'), 'HIGH'),
+    'exec-command': (N_('執行組出來的指令'), N_('用 exec 透過 shell 執行指令，而且指令是用變數拼出來的。內容如果夾帶外部輸入，可能被改成執行別的指令。'), 'HIGH'),
+    'spawn-shell': (N_('透過 shell 執行程式'), N_('啟動其他程式時開了 shell: true，參數會被 shell 解讀，比較容易被夾帶指令。'), 'MEDIUM'),
+    'dump-env': (N_('一次讀出所有環境變數'), N_('把所有環境變數整包讀出來。環境變數裡常有 API 金鑰和權杖，如果接著送到網路上就是外流。'), 'HIGH'),
+    'sensitive-path': (N_('提到存放機密的檔案'), N_('程式裡出現 SSH 金鑰、雲端帳號憑證、瀏覽器 Cookie 或密碼這類檔案的位置。一般技能用不到這些檔案。'), 'HIGH'),
+    'startup-file': (N_('提到開機或 Claude 設定檔'), N_('程式裡出現 .zshrc、LaunchAgents、crontab 或 Claude 設定檔的位置。改動這些檔案，可以讓程式在每次開機或打開 Claude 時自動執行。'), 'HIGH'),
+    'throwaway-endpoint': (N_('連到常被用來收集資料的服務'), N_('程式會連到 Discord／Telegram 機器人、webhook.site、ngrok 這類服務。正常技能偶爾會用，但這也是偷資料時最常用的收件地址。'), 'HIGH'),
+    'raw-ip': (N_('直接連到 IP 位址'), N_('程式直接連到一串數字的 IP 位址，而不是一般網站的名字，比較難看出它連去哪裡。'), 'MEDIUM'),
+    'tls-off': (N_('關掉 HTTPS 安全檢查'), N_('連線時關掉了憑證檢查，傳輸的內容可能被同一個網路上的人看到或竄改。'), 'MEDIUM'),
     # shell scripts
-    'sh-download-and-run': ('下載後直接執行', '腳本從網路下載程式，不經檢查就直接執行。下載的內容隨時可能被換掉，這是最常見的入侵方式之一。', 'CRITICAL'),
-    'sh-decode-and-run': ('解開隱藏的文字後執行', '腳本先把一段編碼過的文字解開，再直接執行。正常的腳本不需要把指令藏起來。', 'CRITICAL'),
-    'sh-reverse-shell': ('讓別人遠端控制電腦', '腳本開了一條連線，讓另一台電腦可以直接下指令控制這台電腦。正常技能不會這樣做。', 'CRITICAL'),
-    'sh-wipe': ('刪除整個家目錄或硬碟', '腳本會刪除整個家目錄或從根目錄開始刪除，可能把所有檔案都刪掉。', 'CRITICAL'),
-    'sh-startup-file': ('改動開機或 Claude 設定', '腳本會寫入 .zshrc、LaunchAgents、排程或 Claude 的設定檔。改了這些，程式就能在每次開機或打開 Claude 時自動執行。', 'HIGH'),
-    'sh-sensitive-path': ('讀取存放機密的檔案', '腳本會讀 SSH 金鑰、雲端帳號憑證、鑰匙圈或瀏覽器資料。一般技能用不到這些。', 'HIGH'),
-    'sh-sudo': ('要求管理員權限', '腳本用 sudo 取得管理員權限，可以修改整台電腦。看它要做的事是不是真的需要。', 'MEDIUM'),
+    'sh-download-and-run': (N_('下載後直接執行'), N_('腳本從網路下載程式，不經檢查就直接執行。下載的內容隨時可能被換掉，這是最常見的入侵方式之一。'), 'CRITICAL'),
+    'sh-decode-and-run': (N_('解開隱藏的文字後執行'), N_('腳本先把一段編碼過的文字解開，再直接執行。正常的腳本不需要把指令藏起來。'), 'CRITICAL'),
+    'sh-reverse-shell': (N_('讓別人遠端控制電腦'), N_('腳本開了一條連線，讓另一台電腦可以直接下指令控制這台電腦。正常技能不會這樣做。'), 'CRITICAL'),
+    'sh-wipe': (N_('刪除整個家目錄或硬碟'), N_('腳本會刪除整個家目錄或從根目錄開始刪除，可能把所有檔案都刪掉。'), 'CRITICAL'),
+    'sh-startup-file': (N_('改動開機或 Claude 設定'), N_('腳本會寫入 .zshrc、LaunchAgents、排程或 Claude 的設定檔。改了這些，程式就能在每次開機或打開 Claude 時自動執行。'), 'HIGH'),
+    'sh-sensitive-path': (N_('讀取存放機密的檔案'), N_('腳本會讀 SSH 金鑰、雲端帳號憑證、鑰匙圈或瀏覽器資料。一般技能用不到這些。'), 'HIGH'),
+    'sh-sudo': (N_('要求管理員權限'), N_('腳本用 sudo 取得管理員權限，可以修改整台電腦。看它要做的事是不是真的需要。'), 'MEDIUM'),
 }
-TIP = '看程式要做的事需不需要這樣寫；拿不準就按「複製給 Claude 判斷」。'
+TIP = N_('看程式要做的事需不需要這樣寫；拿不準就按「複製給 Claude 判斷」。')
 EXAMPLE_PATH = re.compile(r'(^|/)(examples?|samples?|demos?)/', re.I)
 TEST_PATH = re.compile(r'(^|/)(tests?|__tests__|spec|__mocks__|fixtures?)(/|$)|\.(test|spec)\.[cm]?[jt]sx?$', re.I)
 
 
 def calm_reason(rule, path):
     if is_type_definitions(path):
-        return 'TypeScript 型別定義檔（.d.ts）只描述介面，裡面的東西不會執行。'
+        return _('TypeScript 型別定義檔（.d.ts）只描述介面，裡面的東西不會執行。')
     if is_documentation(path):
-        return '出現在說明文件或範例裡，不是技能實際執行的程式。'
+        return _('出現在說明文件或範例裡，不是技能實際執行的程式。')
     if rule not in ('decode-and-run', 'throwaway-endpoint', 'sensitive-path', 'startup-file') and not rule.startswith('sh-'):
         if TEST_PATH.search(path):
-            return '出現在測試程式裡，一般使用技能時不會執行。'
+            return _('出現在測試程式裡，一般使用技能時不會執行。')
         if EXAMPLE_PATH.search(path):
-            return '出現在範例程式裡，一般使用技能時不會執行。'
+            return _('出現在範例程式裡，一般使用技能時不會執行。')
     return ''
 
 
@@ -88,7 +89,7 @@ def parse(data, root=None) -> Outcome:
         code = extra.get('lines') or ''
         if not code.strip() or code.strip() == 'requires login':
             code = source_lines(root, path, line, (r.get('end') or {}).get('line'))
-        f = Finding(scanner='semgrep', title=title, what=what, tip=TIP, severity=severity, file=path, line=line,
+        f = Finding(scanner='semgrep', title=_(text=title), what=_(text=what), tip=_(text=TIP), severity=severity, file=path, line=line,
                     snippet=clip(code, 600), rule=rule, category=rule,
                     detail=f"semgrep: {clip(extra.get('message'), 300)}")
         f.calm = calm_reason(rule, path)
@@ -109,7 +110,7 @@ class Semgrep(Scanner):
     vendor = 'Semgrep'
     license = 'LGPL-2.1'
     homepage = 'https://github.com/semgrep/semgrep'
-    summary = '用 Argus 的規則檢查技能裡的 JavaScript／TypeScript 程式和 shell 腳本，例如執行指令、下載後直接執行、讀取金鑰檔、把資料送到可疑的地方。'
+    summary = N_('用 Argus 的規則檢查技能裡的 JavaScript／TypeScript 程式和 shell 腳本，例如執行指令、下載後直接執行、讀取金鑰檔、把資料送到可疑的地方。')
     order = 35
     exe = 'semgrep'
     package = 'semgrep'
@@ -119,7 +120,7 @@ class Semgrep(Scanner):
 
     def scan(self, skill_dir, work):
         out = work / 'semgrep.json'
-        code, _, err = tools.run([tools.find_exe(self.exe), 'scan', '--config', str(RULES), '--json', '--output', str(out),
+        code, _out, err = tools.run([tools.find_exe(self.exe), 'scan', '--config', str(RULES), '--json', '--output', str(out),
                                   '--metrics', 'off', '--disable-version-check', '--quiet', '--timeout', '20',
                                   '--max-target-bytes', '2000000', '--exclude', 'node_modules', '--exclude', '.git',
                                   '.'], cwd=skill_dir)

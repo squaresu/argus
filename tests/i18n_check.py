@@ -56,7 +56,7 @@ def python_sources():
                     if isinstance(a, ast.Constant) and isinstance(a.value, str):
                         found.setdefault(a.value, f'{path.relative_to(ROOT)}:{a.lineno}')
                         marked.add(id(a))
-                    else:
+                    elif isinstance(a, (ast.JoinedStr, ast.BinOp)):   # f-strings and joins can't be looked up
                         unmarked.append(f'{path.relative_to(ROOT)}:{node.lineno}  _() needs plain text, not {type(a).__name__}')
             if isinstance(node, ast.Name) and node.id == '_' and isinstance(node.ctx, ast.Store) and path.name != 'i18n.py':
                 shadow.append(f'{path.relative_to(ROOT)}:{node.lineno}')

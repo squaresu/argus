@@ -7,6 +7,7 @@ import urllib.request
 from pathlib import Path
 
 from .. import VERSION, tools
+from ..i18n import _
 from ..model import Outcome
 
 
@@ -17,7 +18,7 @@ class Scanner:
     vendor = ''          # who makes it
     license = ''         # its open-source licence
     homepage = ''
-    summary = ''         # one Chinese sentence: what it checks
+    summary = ''         # one Chinese sentence, in N_(): what it checks (translated in info())
     order = 100          # position in the list
     default_on = True    # ticked when the app opens
 
@@ -71,7 +72,9 @@ class Scanner:
         raise NotImplementedError
 
     def info(self):
-        return {k: getattr(self, k) for k in ('id', 'name', 'vendor', 'license', 'homepage', 'summary', 'default_on')}
+        info = {k: getattr(self, k) for k in ('id', 'name', 'vendor', 'license', 'homepage', 'summary', 'default_on')}
+        info['summary'] = _(text=self.summary)
+        return info
 
 
 def fetch_text(url, timeout=15):
@@ -103,7 +106,7 @@ def is_newer(newest, installed):
 
 
 def failed(scanner_id, reason):
-    return Outcome(scanner_id, 'ERROR', error=reason or '沒有產生結果')
+    return Outcome(scanner_id, 'ERROR', error=reason or _('沒有產生結果'))
 
 
 def has_files(skill_dir: Path, suffixes, limit=5000):

@@ -8,6 +8,7 @@ settings files. READMEs and the references/examples documents are left out, sinc
 import re
 from pathlib import Path
 
+from .i18n import N_, _
 from .model import CODE_EXT, is_documentation, is_type_definitions
 
 MAX_BYTES = 1_000_000
@@ -18,14 +19,14 @@ SCRIPT_EXT = CODE_EXT | {'.ps1', '.bat', '.cmd', '.bash', '.zsh'}
 
 # (id, icon, label, what it means)
 KINDS = [
-    ('network', '🌐', '連網', '會連到網路上的服務或下載東西。'),
-    ('exec', '⚙️', '執行程式', '會在你的電腦上執行程式或指令。'),
-    ('write', '📁', '寫入或刪除檔案', '會建立、修改或刪除你電腦上的檔案。'),
-    ('secrets', '🔑', '碰觸機密或 Claude 設定', '會讀取環境變數、金鑰、.env 檔或 Claude 的設定資料夾。'),
-    ('autorun', '⚡', '自動執行', '附帶 hooks 或設定，會在特定時機自動執行，不用你叫它。'),
-    ('install', '📦', '安裝套件', '會安裝其他程式或套件。'),
+    ('network', '🌐', N_('連網'), N_('會連到網路上的服務或下載東西。')),
+    ('exec', '⚙️', N_('執行程式'), N_('會在你的電腦上執行程式或指令。')),
+    ('write', '📁', N_('寫入或刪除檔案'), N_('會建立、修改或刪除你電腦上的檔案。')),
+    ('secrets', '🔑', N_('碰觸機密或 Claude 設定'), N_('會讀取環境變數、金鑰、.env 檔或 Claude 的設定資料夾。')),
+    ('autorun', '⚡', N_('自動執行'), N_('附帶 hooks 或設定，會在特定時機自動執行，不用你叫它。')),
+    ('install', '📦', N_('安裝套件'), N_('會安裝其他程式或套件。')),
 ]
-TEXT_ONLY = {'id': 'text', 'icon': '📄', 'label': '只有文字說明', 'what': '沒有附帶程式，也沒有要求 AI 連網、執行指令或改檔案。',
+TEXT_ONLY = {'id': 'text', 'icon': '📄', 'label': N_('只有文字說明'), 'what': N_('沒有附帶程式，也沒有要求 AI 連網、執行指令或改檔案。'),
              'evidence': []}
 
 CODE_PATTERNS = {
@@ -99,11 +100,11 @@ def analyze(folder: Path):
         if is_type_definitions(rel) or is_documentation(rel):
             continue
         if name in DEPENDENCY_FILES:
-            note('install', rel, None, f'附帶 {f.name}，執行前通常要先安裝裡面列的套件')
+            note('install', rel, None, _('附帶 {file}，執行前通常要先安裝裡面列的套件', file=f.name))
         if name in ('hooks.json', 'settings.json', 'settings.local.json') or rel.startswith('hooks/'):
             text = _read(f)
             if '"hooks"' in text or rel.startswith('hooks/') or '"command"' in text:
-                note('autorun', rel, None, '附帶 hooks 設定，會在 Claude 的特定時機自動執行指令')
+                note('autorun', rel, None, _('附帶 hooks 設定，會在 Claude 的特定時機自動執行指令'))
         if ext in SCRIPT_EXT:
             scripts += 1
             patterns = CODE_PATTERNS
@@ -118,8 +119,8 @@ def analyze(folder: Path):
                 if pattern.search(line):
                     note(kind, rel, n, line)
     if scripts:
-        found['exec'].insert(0, {'file': '', 'line': None, 'text': f'附帶 {scripts} 個程式檔'})
+        found['exec'].insert(0, {'file': '', 'line': None, 'text': _('附帶 {n} 個程式檔', n=scripts)})
         del found['exec'][MAX_EVIDENCE:]
-    caps = [{'id': k, 'icon': icon, 'label': label, 'what': what, 'evidence': found[k]}
+    caps = [{'id': k, 'icon': icon, 'label': _(text=label), 'what': _(text=what), 'evidence': found[k]}
             for k, icon, label, what in KINDS if found[k]]
-    return caps or [dict(TEXT_ONLY)]
+    return caps or [dict(TEXT_ONLY, label=_(text=TEXT_ONLY['label']), what=_(text=TEXT_ONLY['what']))]
