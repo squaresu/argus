@@ -165,17 +165,16 @@ input[type=url]:focus { outline: none; border-color: var(--pick-line); }
 .radar { width: 84px; height: 84px; margin: 0 auto; border-radius: 22%; background: linear-gradient(180deg, var(--navy-900), var(--navy-800)); position: relative; overflow: hidden; box-shadow: 0 0 0 1px #ece8e026, 0 4px 14px #17203333; }
 /* the scan: a line glides down and up over SKILL, trailing a fading afterimage. --y is where the line is,
    --t how long its trail is (positive going down, negative going up): longest mid-sweep, nothing at the turn.
-   The word lights up mint inside the trail and fades back once it has passed. */
+   As in the icon, the word is mint wherever the line has passed: filling in on the way down, drawn back
+   on the way up. */
 @property --y { syntax: '<percentage>'; inherits: true; initial-value: 14%; }
 @property --t { syntax: '<percentage>'; inherits: true; initial-value: 0%; }
 .radar { --y: 14%; --t: 0%; animation: scan-y 1.3s ease-in-out infinite alternate, scan-t 2.6s linear infinite; }
 .radar::before, .radar::after { content: "SKILL"; position: absolute; inset: 0; display: grid; place-items: center; font: 800 19px/1 -apple-system, "Helvetica Neue", Arial, sans-serif; letter-spacing: -.02em; }
 .radar::before { color: var(--cream); }
 .radar::after { color: var(--mint-bright); text-shadow: 0 0 8px #96f0be99; z-index: 2;
-  -webkit-mask-image: linear-gradient(to bottom, transparent calc(var(--y) - max(var(--t), 0%) - 2%), #000 var(--y), transparent calc(var(--y) + 2%)),
-                      linear-gradient(to top, transparent calc(100% - var(--y) - max(var(--t) * -1, 0%) - 2%), #000 calc(100% - var(--y)), transparent calc(102% - var(--y)));
-          mask-image: linear-gradient(to bottom, transparent calc(var(--y) - max(var(--t), 0%) - 2%), #000 var(--y), transparent calc(var(--y) + 2%)),
-                      linear-gradient(to top, transparent calc(100% - var(--y) - max(var(--t) * -1, 0%) - 2%), #000 calc(100% - var(--y)), transparent calc(102% - var(--y))); }
+  -webkit-mask-image: linear-gradient(to bottom, #000 var(--y), transparent var(--y));
+          mask-image: linear-gradient(to bottom, #000 var(--y), transparent var(--y)); }
 .radar span { position: absolute; left: 10%; right: 10%; top: var(--y); height: 3px; margin-top: -1.5px; border-radius: 3px; background: var(--mint-bright); box-shadow: 0 0 10px var(--mint-bright); z-index: 3; }
 .radar i { position: absolute; left: 10%; right: 10%; z-index: 1; pointer-events: none;
   background: linear-gradient(var(--dir), transparent, #96f0be14 40%, #96f0be4d);
