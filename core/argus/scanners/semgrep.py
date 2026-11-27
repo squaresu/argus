@@ -47,7 +47,20 @@ def calm_reason(rule, path):
     return ''
 
 
-def parse(data) -> Outcome:
+def source_lines(root, path, start, end):
+    """The lines a finding covers, read from the skill itself: newer Semgrep versions print "requires login"
+    in place of the code unless you sign in to Semgrep's service."""
+    if root is None or not start:
+        return ''
+    try:
+        with open(Path(root) / path, encoding='utf-8', errors='replace') as fh:
+            lines = [line.rstrip('\n') for n, line in enumerate(fh, 1) if start <= n <= (end or start)][:12]
+    except OSError:
+        return ''
+    return '\n'.join(lines)
+
+
+def parse(data, root=None) -> Outcome:
     findings, seen = [], set()
     hits = sorted(data.get('results') or [], key=lambda r: r.get('check_id', '') != 'argus.decode-and-run')
     decoded = set()
@@ -63,8 +76,11 @@ def parse(data) -> Outcome:
             decoded.add((path, line))
         title, what, severity = RULE_ZH.get(rule, (rule, '', 'MEDIUM'))
         extra = r.get('extra') or {}
+        code = extra.get('lines') or ''
+        if not code.strip() or code.strip() == 'requires login':
+            code = source_lines(root, path, line, (r.get('end') or {}).get('line'))
         f = Finding(scanner='semgrep', title=title, what=what, tip=TIP, severity=severity, file=path, line=line,
-                    snippet=clip(extra.get('lines'), 600), rule=rule, category=rule,
+                    snippet=clip(code, 600), rule=rule, category=rule,
                     detail=f"semgrep: {clip(extra.get('message'), 300)}")
         f.calm = calm_reason(rule, path)
         findings.append(f)
@@ -102,7 +118,7 @@ class Semgrep(Scanner):
             data = json.loads(out.read_text(encoding='utf-8'))
         except (OSError, ValueError):
             return failed(self.id, tools.last_lines(err))
-        return parse(data)
+        return parse(data, skill_dir)
 
 
 SCANNER = Semgrep()

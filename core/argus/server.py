@@ -16,8 +16,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
-from . import (COPYRIGHT, DISCLAIMER, DISCLAIMER_SHORT, LICENSE, NAME, TAGLINE, VERSION, jobs, native, reminder,
-               scanners, targets, tools, updates)
+from . import (COPYRIGHT, DISCLAIMER, DISCLAIMER_SHORT, LICENSE, NAME, TAGLINE, VERSION, integrations, jobs, native,
+               reminder, scanners, targets, tools, updates)
 from .scanners.base import is_newer
 
 UI = Path(__file__).parent / 'ui'
@@ -96,6 +96,9 @@ def state():
         'claude_found': any(r.exists() for r in targets.claude_roots()),
         'update': updates.status(),
         'reminder': reminder.status(),
+        # 和 Claude 一起用: the Argus skill in Claude, and the automatic check of new skills
+        'companion': {'skill': integrations.skill_installed(), 'command': integrations.command_path().is_file(),
+                      'autocheck': integrations.autocheck_on(), 'autocheck_supported': integrations.autocheck_supported()},
     }
 
 
@@ -188,6 +191,15 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(200, job.to_dict())
             if path == '/api/estimate':   # before a scan: how many skills, roughly how long
                 return self.send(200, jobs.estimate(data.get('kind'), data.get('value'), data.get('scanners') or []))
+            if path == '/api/claude-skill':   # put the Argus skill into Claude (or take it out)
+                if data.get('on', True) and not integrations.write_command():
+                    raise targets.TargetError('找不到 uv，請重新打開 Argus 再試一次。')
+                return self.send(200, {'skill': integrations.install_skill(bool(data.get('on', True)))})
+            if path == '/api/autocheck':      # check newly installed Claude skills automatically (Mac)
+                try:
+                    return self.send(200, {'autocheck': integrations.set_autocheck(bool(data.get('on')))})
+                except OSError as err:
+                    raise targets.TargetError(str(err))
             if path == '/api/install':
                 if jobs.busy():
                     return self.send(409, {'error': '已經有工作在進行，請等它完成。'})
@@ -244,6 +256,7 @@ def main(argv=None):
     threading.Thread(target=start_checks, daemon=True).start()
     threading.Thread(target=updates.check, daemon=True).start()
     reminder.recheck()
+    threading.Thread(target=integrations.write_command, daemon=True).start()   # keep `argus` pointing at this copy
     if '--no-idle-exit' not in argv:
         threading.Thread(target=watchdog, args=(server,), daemon=True).start()
     url_file = tools.state_dir() / 'url'

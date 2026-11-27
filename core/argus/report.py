@@ -49,6 +49,20 @@ def advice(r):
     return 'ok', f'沒有發現需要擔心的地方。{missing}'
 
 
+def summary_line(results, installed, unit):
+    """The conclusion as plain text (for the command line and notifications) → (worst advice, text)."""
+    marks = [advice(r)[0] for r in results]
+    if len(results) == 1:
+        a, why = advice(results[0])
+        return a, f'{advice_word(a, installed)}：{why}'
+    counts = {a: marks.count(a) for a in ADVICE_ORDER}
+    parts = [f'{counts[a]} {unit}{advice_word(a, installed)}' for a in ADVICE_ORDER if counts[a]]
+    named = [f'{advice_word(a, installed)}：' + '、'.join(r.name for r, m in zip(results, marks) if m == a)
+             for a in ('no', 'ask') if counts[a]]
+    worst = next(a for a in ADVICE_ORDER if counts[a])
+    return worst, '、'.join(parts) + ('（' + '；'.join(named) + '）' if named else '')
+
+
 def summary_html(results, installed, unit):
     """The conclusion at the top of the report."""
     if not results:

@@ -2,11 +2,12 @@
 scanned, or hasn't been scanned for a month. Compares files with what the last scan saw; reads only.
 """
 
+import json
 import threading
 import time
 from datetime import datetime
 
-from . import reviews, targets
+from . import reviews, targets, tools
 
 STALE_DAYS = 30
 LIST_LIMIT = 6
@@ -55,6 +56,38 @@ def compute(now=None, store=None, skills=None):
             'stale_count': len(stale), 'days': int(max(ages)) if ages else None,
             # changes when the situation does, so 稍後再說 can come back when there's something new
             'signature': f'{len(skills)}:{",".join(sorted(new + changed))}'}
+
+
+def _baseline_path():
+    return tools.state_dir() / 'autocheck-baseline.json'
+
+
+def take_baseline(skills=None):
+    """When the automatic check is turned on: remember what every installed skill looks like now, so only
+    skills installed or changed after this are checked automatically."""
+    skills = targets.claude_skills() if skills is None else skills
+    data = {'path:' + str(f.resolve()): reviews.file_hashes(f) for f in skills}
+    _baseline_path().write_text(json.dumps(data), encoding='utf-8')
+
+
+def pending(store=None, skills=None, baseline=None):
+    """Installed skills that are new or changed since their last scan (or since the baseline, for those never
+    scanned). The automatic check scans exactly these."""
+    store = store or reviews.Store()
+    skills = targets.claude_skills() if skills is None else skills
+    if baseline is None:
+        try:
+            baseline = json.loads(_baseline_path().read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            baseline = {}
+    out = []
+    for folder in skills:
+        key = 'path:' + str(folder.resolve())
+        last = ((store.data.get(key) or {}).get('last') or {}).get('files')
+        before = last if last is not None else baseline.get(key)
+        if before is None or reviews.diff_files(before, reviews.file_hashes(folder))['count']:
+            out.append(folder)
+    return out
 
 
 def status():

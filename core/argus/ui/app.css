@@ -162,6 +162,20 @@ input[type=url]:focus { outline: none; border-color: var(--pick-line); }
 .remind { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px 16px; margin: 0 0 16px; box-shadow: var(--shadow); font-size: 14px; }
 .remind-icon { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; flex: none; background: var(--pick); color: var(--pick-line); font-weight: 800; }
 .remind-msg b { display: block; } .remind-msg small { display: block; color: var(--muted); font-size: 13px; margin-top: 2px; }
+/* 和 Claude 一起用: two switches */
+.comp-row { display: flex; align-items: center; gap: 16px; padding: 12px 0; border-top: 1px solid var(--line); }
+.comp-row:first-of-type { border-top: 0; padding-top: 0; }
+.comp-row > div { flex: 1; } .comp-row p { margin: 3px 0 0; }
+.switch { position: relative; flex: none; width: 46px; height: 26px; cursor: pointer; }
+.switch input { position: absolute; opacity: 0; width: 100%; height: 100%; margin: 0; cursor: pointer; }
+.switch span { position: absolute; inset: 0; border-radius: 999px; background: var(--soft); border: 1px solid var(--line); transition: background .15s; }
+.switch span::after { content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: var(--muted); transition: transform .15s, background .15s; }
+.switch input:checked + span { background: var(--mint-ink); border-color: transparent; }
+.switch input:checked + span::after { transform: translateX(20px); background: #fff; }
+[data-theme="dark"] .switch input:checked + span { background: var(--mint); }
+[data-theme="dark"] .switch input:checked + span::after { background: var(--navy-900); }
+.switch input:disabled + span { opacity: .45; } .switch input:disabled { cursor: not-allowed; }
+.switch input:focus-visible + span { outline: 2px solid var(--focus); outline-offset: 2px; }
 .has-update { position: relative; }
 .has-update::after { content: ""; position: absolute; top: -2px; right: -10px; width: 8px; height: 8px; border-radius: 50%; background: var(--mint); box-shadow: 0 0 6px var(--mint-bright); }
 #about-update { display: block; color: var(--link); font-size: 12.5px; }

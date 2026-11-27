@@ -33,6 +33,9 @@ core/argus/            核心，只用 Python 標準函式庫；Mac 和之後的
   reviews.py           已看過和更新比對（檔案雜湊、發現指紋，只存在本機）
   mcp.py               MCP 伺服器設定檢查（只讀設定檔，不啟動伺服器）
   native.py            系統的選資料夾、選檔案、在 Finder 打開（唯一跟平台有關的地方）
+  cli.py               指令模式：argus scan <目標>（給 Claude 用）、argus watch（自動檢查新技能）
+  integrations.py      建立 argus 指令、Claude 裡的 argus 技能、Mac 的自動檢查（LaunchAgent）、通知
+  reminder.py          重新檢查提醒，以及自動檢查要掃哪些技能
   scanners/            每個掃描工具一個檔案；加檔案就是加工具
   ui/                  網頁介面（HTML / CSS / JS，沒有外部相依）
 mac/                   Mac 啟動器、Info.plist、圖示、打包腳本
@@ -42,6 +45,8 @@ docs/                  使用說明、開發說明
 ```
 
 **執行流程**：點兩下 App（Windows 是 `Argus.cmd` 或開始功能表的捷徑）→ `mac/run`／`windows/launch.ps1` 確認有 uv → 用 uv 準備的 Python 3.12 在背景啟動 `python -m argus` → 打開瀏覽器。掃描工具各自用 `uv tool install` 裝成獨立環境，彼此的套件版本不會打架。頁面關掉幾分鐘後，伺服器自動結束。
+
+**指令模式**：Argus 每次啟動都會在 `~/.local/bin` 建立 `argus` 指令（Windows 是 `argus.cmd`），指向這一份 Argus。`argus scan <資料夾／zip／GitHub 網址／claude／mcp>` 不開網頁直接掃描，印出結論和需要看的項目（跟報告的「複製整份報告給 Claude 判斷」同一份文字），也會存一份 HTML 報告。Claude 裡的 argus 技能就是呼叫這個指令。
 
 ## 開發
 

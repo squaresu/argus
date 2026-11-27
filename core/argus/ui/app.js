@@ -98,6 +98,31 @@ function renderUpdate() {
 
 let updating = null;
 
+// 和 Claude 一起用
+function renderCompanion() {
+  const c = state.companion || {};
+  $('#skill-toggle').checked = !!c.skill;
+  $('#auto-toggle').checked = !!c.autocheck;
+  $('#auto-toggle').disabled = !c.autocheck_supported;
+  const t = $('#auto-text');
+  t.dataset.mac = t.dataset.mac || t.textContent;
+  t.textContent = c.autocheck_supported ? t.dataset.mac
+    : '自動檢查目前只有 Mac 版，Windows 版之後會加上。打開 Argus 時的「重新檢查提醒」一樣會告訴你哪些技能有更新。';
+}
+async function toggleCompanion(el, path, ask) {
+  const on = el.checked;
+  if (on && ask && !confirm(ask)) { el.checked = false; return; }
+  el.disabled = true;
+  try {
+    const r = await api(path, { on });
+    toast(path === '/api/claude-skill'
+      ? (r.skill ? '已經加到 Claude ✓ 下次在 Claude Code 說「幫我檢查這個技能」就會用 Argus。' : '已經從 Claude 移除。')
+      : (r.autocheck ? '已開啟自動檢查 ✓' : '已關閉自動檢查。'), 6000);
+  } catch (err) { el.checked = !on; toast(err.message, 8000); }
+  el.disabled = false;
+  loadState().catch(() => {});
+}
+
 // 「該重新檢查了」: a skill changed or arrived since its last scan, or hasn't been scanned for a month
 function renderReminder() {
   const r = state.reminder || {};
@@ -215,6 +240,7 @@ async function loadState() {
     `<li><a href="${esc(s.homepage)}" target="_blank" rel="noopener">${esc(s.name)}</a>（${esc(s.vendor)}）— ${esc(s.license)}</li>`).join('');
   renderUpdate();
   renderReminder();
+  renderCompanion();
   // an install that was going on when the page was (re)loaded: keep showing it next to its tool
   if (state.installing && !installing) watchInstall(state.installing.id, state.installing.job);
   renderScanners();
@@ -352,6 +378,9 @@ $('#remind-later').addEventListener('click', () => {
   try { localStorage.setItem('argus-remind-dismissed', `${state.reminder.signature}|${Date.now() + 7 * 864e5}`); } catch {}
   $('#remind').hidden = true;
 });
+$('#skill-toggle').addEventListener('change', (ev) => toggleCompanion(ev.target, '/api/claude-skill'));
+$('#auto-toggle').addEventListener('change', (ev) => toggleCompanion(ev.target, '/api/autocheck',
+  '開啟後，從現在開始新裝或更新的 Claude 技能會在背景自動檢查。\n\n現在已經裝好的技能不會自動重掃；想檢查的話，用「我所有的 Claude 技能」掃一次就好。'));
 $('#update-later').addEventListener('click', () => {
   try { localStorage.setItem('argus-update-dismissed', state.update.latest); } catch {}
   $('#update').hidden = true;

@@ -183,6 +183,11 @@ def resolve(kind, value, work: Path):
         return p.name, expand(single_folder(safe_extract(p, work / 'zip')))
     if kind == 'github':
         return value.strip(), expand(github(value, work))
+    if kind == 'paths':   # given skill folders, already on this computer (the automatic check of new skills)
+        folders = [Path(v) for v in (value or []) if Path(v).is_dir()]
+        if not folders:
+            raise TargetError('要檢查的技能資料夾都不見了。')
+        return '新裝或更新的 Claude 技能', folders
     raise TargetError('不認得的掃描對象。')
 
 

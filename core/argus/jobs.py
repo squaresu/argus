@@ -33,6 +33,8 @@ class Job:
         self.target = ''             # an install: the scanner id
         self.started = time.time()
         self.estimate = 0            # a scan: seconds the whole thing should take, once its size is known
+        self.results = []            # a scan: the SkillResults, for the command line (python -m argus scan)
+        self.installed = False       # a scan: of skills already in use (wording: 可以繼續用 rather than 可以裝)
 
     def say(self, text):
         self.current = text
@@ -85,7 +87,7 @@ def busy():
 def skill_key(kind, value, folder: Path, tmp: Path):
     """Identifies a skill across scans: its real folder when it's on this computer; for a download, where it came
     from and where it sits inside (leaving out the archive's own top folder, whose name changes with the version)."""
-    if kind in ('claude', 'folder'):
+    if kind in ('claude', 'folder', 'paths'):
         return 'path:' + str(folder.resolve())
     try:
         parts = folder.relative_to(tmp).parts
@@ -164,8 +166,10 @@ def scan(kind, value, scanner_ids):
             job.say('正在跟上次的結果比對…')
             snapshots = track(results, folders)
             job.say('正在產生報告…')
-            job.result = report.save(title, results, chosen, versions, snapshots, installed=kind == 'claude')
-            if kind in ('claude', 'folder'):   # what was just scanned no longer needs a reminder
+            job.installed = kind in ('claude', 'paths')
+            job.results = results
+            job.result = report.save(title, results, chosen, versions, snapshots, installed=job.installed)
+            if kind in ('claude', 'folder', 'paths'):   # what was just scanned no longer needs a reminder
                 reminder.recheck()
         finally:
             targets.cleanup(tmp)
@@ -197,6 +201,7 @@ def scan_mcp():
         job.total = job.done = len(results)
         job.say(f'找到 {len(results)} 個 MCP 伺服器，正在比對…')
         snapshots = track(results, [None] * len(results))
+        job.installed, job.results = True, results
         job.result = report.save('我的 MCP 伺服器', results, [mcp.TOOL], {mcp.SCANNER: '內建'}, snapshots, installed=True)
 
     return start(Job('scan', '掃描 MCP 伺服器'), work)
